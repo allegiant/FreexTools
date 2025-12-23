@@ -196,12 +196,65 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
                 onAutoSegment = {
                     currentImage?.let { workImg ->
                         scope.launch(Dispatchers.Default) {
-                            // 过滤出启用的规则
                             val activeRules = colorRules.filter { it.isEnabled }
                             if (activeRules.isNotEmpty()) {
-                                val rects = ImageUtils.scanConnectedComponents(workImg.bufferedImage, activeRules)
-                                withContext(Dispatchers.Main) {
-                                    charRects = rects
+                                // 1. 执行智能识别
+                                val rawRects = ImageUtils.scanConnectedComponents(workImg.bufferedImage, activeRules)
+
+                                // 2. 计算网格参数建议值
+                                if (rawRects.isNotEmpty()) {
+                                    // 简单的排版推算逻辑 (假设是单行横排)
+                                    // 按 x 坐标排序
+                                    val sortedRects = rawRects.sortedBy { it.left }
+
+                                    // 起点：第一个框的左上角
+                                    val first = sortedRects.first()
+                                    val newX = first.left.toInt()
+                                    val newY = first.top.toInt()
+
+                                    // 宽高：取平均值 (更平滑) 或 最大值 (确保包住)
+                                    // 这里使用平均值，微调时更方便
+                                    val avgW = sortedRects.map { it.width }.average().toInt()
+                                    val avgH = sortedRects.map { it.height }.average().toInt()
+
+                                    // 数量
+                                    val count = sortedRects.size
+
+                                    // 间距：计算相邻框的平均间隙
+                                    var totalGap = 0f
+                                    var gapCount = 0
+                                    for (i in 0 until sortedRects.size - 1) {
+                                        val gap = sortedRects[i+1].left - sortedRects[i].right
+                                        // 过滤掉异常大的间距（比如换行了）
+                                        if (gap > 0 && gap < avgW * 2) {
+                                            totalGap += gap
+                                            gapCount++
+                                        }
+                                    }
+                                    val avgGap = if (gapCount > 0) (totalGap / gapCount).toInt() else 0
+
+                                    // 3. 更新 UI 状态
+                                    withContext(Dispatchers.Main) {
+                                        // 更新显示的绿框 (智能模式结果)
+                                        charRects = rawRects
+
+                                        // 【关键】同时将计算出的参数填入网格设置中
+                                        // 这样当你切换到“定距切割”模式时，参数已经准备好了！
+                                        gridX = newX
+                                        gridY = newY
+                                        gridW = avgW
+                                        gridH = avgH
+                                        gridColGap = avgGap
+                                        gridRowGap = 0
+                                        gridColCount = count
+                                        gridRowCount = 1
+
+                                        // 可选：是否自动切到网格模式？
+                                        // 建议保留在智能模式，让用户看一眼识别结果，再手动点切换去微调
+                                        // isGridMode = true
+                                    }
+                                } else {
+                                    withContext(Dispatchers.Main) { charRects = emptyList() }
                                 }
                             }
                         }
