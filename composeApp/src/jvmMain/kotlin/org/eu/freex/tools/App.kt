@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.eu.freex.tools.dialogs.ScreenCropperDialog
 import org.eu.freex.tools.model.ColorRule
+import org.eu.freex.tools.model.GridParams
 import org.eu.freex.tools.model.WorkImage
 import org.eu.freex.tools.utils.ImageUtils
 import java.awt.Component
@@ -287,10 +288,3 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
         )
     }
 }
-
-// 辅助数据类，方便传递参数
-data class GridParams(
-    val x: Int, val y: Int, val w: Int, val h: Int,
-    val colGap: Int, val rowGap: Int,
-    val colCount: Int, val rowCount: Int
-)

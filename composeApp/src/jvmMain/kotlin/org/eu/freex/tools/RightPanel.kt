@@ -1,31 +1,30 @@
 package org.eu.freex.tools
 
-
-import androidx.compose.foundation.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.*
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import org.eu.freex.tools.model.ColorRule
+import org.eu.freex.tools.model.GridParams
+import org.eu.freex.tools.ui.components.TabButton
+import org.eu.freex.tools.ui.panel.BinaryPreviewContent
+import org.eu.freex.tools.ui.panel.ColorRuleItem
+import org.eu.freex.tools.ui.panel.GridSettingsContent
 import org.eu.freex.tools.utils.ColorUtils
 import java.awt.image.BufferedImage
 
@@ -41,14 +40,13 @@ fun RightPanel(
     defaultBias: String,
     onDefaultBiasChange: (String) -> Unit,
     onRuleUpdate: (Long, String) -> Unit,
-    onRuleToggle: (Long, Boolean) -> Unit, // 新增回调
+    onRuleToggle: (Long, Boolean) -> Unit,
     onRuleRemove: (Long) -> Unit,
     onClearRules: () -> Unit,
     showBinary: Boolean,
     onTogglePreview: () -> Unit,
     onAutoSegment: () -> Unit,
     onClearSegments: () -> Unit,
-    // 新增参数
     isGridMode: Boolean,
     onToggleGridMode: (Boolean) -> Unit,
     gridParams: GridParams,
@@ -59,7 +57,7 @@ fun RightPanel(
             .fillMaxHeight()
             .background(Color(0xFFEEEEEE))
             .padding(16.dp)
-            .verticalScroll(rememberScrollState()) // 防止高度不够，允许滚动
+            .verticalScroll(rememberScrollState())
     ) {
         // 1. 全图二值化预览
         Text("全图二值化预览", style = MaterialTheme.typography.subtitle2, fontWeight = FontWeight.Bold)
@@ -73,33 +71,13 @@ fun RightPanel(
                 .border(2.dp, Color.DarkGray)
         ) {
             if (rawImage != null) {
-                BinaryPreviewScope(rawImage = rawImage, colorRules = colorRules)
+                BinaryPreviewContent(rawImage = rawImage, colorRules = colorRules)
             } else {
                 Text("暂无图片", color = Color.Gray, modifier = Modifier.align(Alignment.Center), fontSize = 12.sp)
             }
         }
-        Spacer(Modifier.height(8.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Button(
-                onClick = onAutoSegment,
-                modifier = Modifier.weight(1f).height(36.dp),
-                contentPadding = PaddingValues(0.dp)
-            ) {
-                Text("自动计算点阵范围", fontSize = 12.sp)
-            }
 
-            Spacer(Modifier.width(8.dp))
-
-            OutlinedButton(
-                onClick = onClearSegments,
-                modifier = Modifier.width(60.dp).height(36.dp),
-                contentPadding = PaddingValues(0.dp)
-            ) {
-                Text("清空", fontSize = 12.sp)
-            }
-        }
-
-        // 边界检查：防止裁剪后旧坐标导致越界
+        // 鼠标位置状态检查逻辑
         val isHoverValid = rawImage != null && hoverPixelPos != null &&
                 hoverPixelPos.x >= 0 && hoverPixelPos.x < rawImage.width &&
                 hoverPixelPos.y >= 0 && hoverPixelPos.y < rawImage.height
@@ -119,12 +97,11 @@ fun RightPanel(
 
         Divider(Modifier.padding(vertical = 12.dp))
 
-        // 2. 鼠标信息
+        // 2. 鼠标信息区 (此处逻辑简单，暂不拆分，或可提取为 MouseInfoPanel)
         Row(verticalAlignment = Alignment.CenterVertically) {
             val safeColor = if (isHoverValid) hoverColor else Color.Transparent
             Box(Modifier.size(16.dp).background(safeColor).border(1.dp, Color.Gray))
             Spacer(Modifier.width(8.dp))
-
             if (isHoverValid) {
                 val r = (safeColor.red * 255).toInt()
                 val g = (safeColor.green * 255).toInt()
@@ -137,7 +114,6 @@ fun RightPanel(
             } else {
                 Text("#------", style = MaterialTheme.typography.caption, color = Color.Gray)
             }
-
             Spacer(Modifier.weight(1f))
             if (hoverPixelPos != null) {
                 Text(
@@ -150,18 +126,20 @@ fun RightPanel(
 
         Spacer(Modifier.height(12.dp))
 
-        // 3. 默认偏色
+        // 3. 默认偏色设置
         Text("新取色默认偏色", style = MaterialTheme.typography.caption, color = Color.Gray)
         OutlinedTextField(
             value = defaultBias,
             onValueChange = { if (it.length <= 6) onDefaultBiasChange(it.uppercase()) },
             modifier = Modifier.fillMaxWidth().height(48.dp),
             singleLine = true,
-            textStyle = TextStyle(fontSize = 12.sp),
+            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp),
             colors = TextFieldDefaults.outlinedTextFieldColors(backgroundColor = Color.White)
         )
 
-        // --- 切割模式切换 ---
+        Spacer(Modifier.height(12.dp))
+
+        // 4. 切割模式切换区
         Row(Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(4.dp)).border(1.dp, Color.Gray, RoundedCornerShape(4.dp))) {
             TabButton(text = "智能识别", isSelected = !isGridMode, onClick = { onToggleGridMode(false) }, modifier = Modifier.weight(1f))
             TabButton(text = "定距切割", isSelected = isGridMode, onClick = { onToggleGridMode(true) }, modifier = Modifier.weight(1f))
@@ -169,29 +147,27 @@ fun RightPanel(
         Spacer(Modifier.height(8.dp))
 
         if (!isGridMode) {
-            // --- 智能识别模式 UI (原有按钮) ---
+            // 智能识别按钮组
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Button(
                     onClick = onAutoSegment,
                     modifier = Modifier.weight(1f).height(36.dp),
                     contentPadding = PaddingValues(0.dp)
-                ) { Text("自动计算范围", fontSize = 12.sp) }
+                ) { Text("自动计算点阵范围", fontSize = 12.sp) }
                 Spacer(Modifier.width(8.dp))
                 OutlinedButton(onClick = onClearSegments, modifier = Modifier.width(60.dp).height(36.dp), contentPadding = PaddingValues(0.dp)) { Text("清空", fontSize = 12.sp) }
             }
         } else {
-            // --- 定距切割模式 UI (仿截图) ---
-            GridSettingsPanel(
-                p = gridParams,
-                onChange = onGridParamChange
-            )
+            // 网格设置面板
+            GridSettingsContent(p = gridParams, onChange = onGridParamChange)
         }
-        Spacer(Modifier.height(12.dp))
 
-        // 4. 规则列表 (Header)
+        Divider(Modifier.padding(vertical = 12.dp))
+
+        // 5. 规则列表
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "取色规则 (${colorRules.size}/10)", // 显示数量限制
+                "取色规则 (${colorRules.size}/10)",
                 style = MaterialTheme.typography.subtitle2,
                 fontWeight = FontWeight.Bold
             )
@@ -212,7 +188,7 @@ fun RightPanel(
         ) {
             LazyColumn(contentPadding = PaddingValues(4.dp)) {
                 items(colorRules, key = { it.id }) { rule ->
-                    ColorRuleRow(
+                    ColorRuleItem(
                         rule = rule,
                         onBiasChange = { newBias -> onRuleUpdate(rule.id, newBias) },
                         onRemove = { onRuleRemove(rule.id) },
@@ -221,243 +197,5 @@ fun RightPanel(
                 }
             }
         }
-    }
-}
-
-@Composable
-fun BinaryPreviewScope(
-    rawImage: BufferedImage,
-    colorRules: List<ColorRule>
-) {
-    var binaryBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
-
-    // 监听规则变化，后台计算全图
-    LaunchedEffect(rawImage, colorRules.size, colorRules.toList()) {
-        withContext(Dispatchers.Default) {
-            // 过滤未启用的规则
-            val activeRules = colorRules.filter { it.isEnabled }
-
-            if (activeRules.isEmpty()) {
-                binaryBitmap = null
-                return@withContext
-            }
-            val w = rawImage.width
-            val h = rawImage.height
-            val resultImg = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
-
-            for (y in 0 until h) {
-                for (x in 0 until w) {
-                    val rgb = rawImage.getRGB(x, y)
-                    val isMatch = ColorUtils.isMatchAny(rgb, activeRules)
-                    // 匹配显示白色，不匹配黑色
-                    resultImg.setRGB(x, y, if (isMatch) 0xFFFFFFFF.toInt() else 0xFF000000.toInt())
-                }
-            }
-            binaryBitmap = resultImg.toComposeImageBitmap()
-        }
-    }
-
-    Box(
-        modifier = Modifier.fillMaxSize().background(Color.DarkGray),
-        contentAlignment = Alignment.Center
-    ) {
-        if (colorRules.none { it.isEnabled }) {
-            Text("无启用规则", color = Color.Gray, fontSize = 12.sp)
-        } else if (binaryBitmap != null) {
-            Image(
-                bitmap = binaryBitmap!!,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit,
-                filterQuality = FilterQuality.None
-            )
-        } else {
-            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterialApi::class)
-@Composable
-fun ColorRuleRow(
-    rule: ColorRule,
-    onBiasChange: (String) -> Unit,
-    onToggle: (Boolean) -> Unit,
-    onRemove: () -> Unit
-) {
-    val color = try {
-        Color(0xFF000000 or rule.targetHex.toInt(16).toLong())
-    } catch (e: Exception) {
-        Color.Black
-    }
-
-    // 极度紧凑的 Row
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(32.dp) // 强制限制高度
-            .padding(vertical = 2.dp)
-            .background(if (rule.isEnabled) Color(0xFFF9F9F9) else Color(0xFFEEEEEE), RoundedCornerShape(4.dp))
-            .border(1.dp, Color(0xFFEEEEEE), RoundedCornerShape(4.dp))
-            .padding(horizontal = 4.dp), // 减小内部 padding
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // 1. Checkbox
-        // 使用 CompositionLocal 移除默认的最小触摸区域限制，使 Checkbox 变小
-        CompositionLocalProvider(LocalMinimumInteractiveComponentEnforcement provides false) {
-            Checkbox(
-                checked = rule.isEnabled,
-                onCheckedChange = onToggle,
-                modifier = Modifier.scale(0.8f).size(24.dp), // 缩小显示
-                colors = CheckboxDefaults.colors(checkedColor = Color(0xFFFF5722))
-            )
-        }
-
-        Spacer(Modifier.width(4.dp))
-
-        // 2. 色块
-        Box(Modifier.size(16.dp).background(color).border(1.dp, Color.Gray))
-
-        Spacer(Modifier.width(6.dp))
-
-        // 3. 目标色值
-        Text(
-            rule.targetHex,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            color = if (rule.isEnabled) Color.Black else Color.Gray,
-            modifier = Modifier.width(55.dp)
-        )
-
-        Spacer(Modifier.width(4.dp))
-
-        // 4. 容差输入框 (使用 BasicTextField 自定义样式以解决显示不全问题)
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .height(24.dp) // 显式控制高度
-                .background(Color.White, RoundedCornerShape(2.dp))
-                .border(1.dp, Color.LightGray, RoundedCornerShape(2.dp))
-                .padding(horizontal = 4.dp),
-            contentAlignment = Alignment.CenterStart
-        ) {
-            BasicTextField(
-                value = rule.biasHex,
-                onValueChange = { if (it.length <= 6) onBiasChange(it.uppercase()) },
-                singleLine = true,
-                textStyle = TextStyle(
-                    fontSize = 12.sp,
-                    textAlign = TextAlign.Center,
-                    color = if (rule.isEnabled) Color.Black else Color.Gray
-                ),
-                cursorBrush = SolidColor(Color.Black),
-                enabled = rule.isEnabled
-            )
-        }
-
-        Spacer(Modifier.width(4.dp))
-
-        // 5. 删除按钮
-        Icon(
-            Icons.Default.Close,
-            contentDescription = null,
-            modifier = Modifier.size(16.dp).clickable { onRemove() },
-            tint = Color.Gray
-        )
-    }
-}
-
-@Composable
-fun TabButton(text: String, isSelected: Boolean, onClick: () -> Unit, modifier: Modifier) {
-    Box(
-        modifier = modifier
-            .height(32.dp)
-            .background(if (isSelected) Color(0xFF673AB7) else Color.Transparent)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(text, color = if (isSelected) Color.White else Color.Black, fontSize = 12.sp)
-    }
-}
-
-@Composable
-fun GridSettingsPanel(
-    p: GridParams,
-    onChange: (Int, Int, Int, Int, Int, Int, Int, Int) -> Unit
-) {
-    Card(elevation = 2.dp, backgroundColor = Color(0xFFF5F5F5), border = BorderStroke(1.dp, Color.Gray)) {
-        Column(Modifier.padding(8.dp)) {
-            // 1. 起点位置
-            LabelRow("起点位置: x, y")
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                NumberInput("左:", p.x) { onChange(it, p.y, p.w, p.h, p.colGap, p.rowGap, p.colCount, p.rowCount) }
-                NumberInput("上:", p.y) { onChange(p.x, it, p.w, p.h, p.colGap, p.rowGap, p.colCount, p.rowCount) }
-            }
-
-            Spacer(Modifier.height(6.dp))
-
-            // 2. 切割大小
-            LabelRow("切割大小: 宽, 高")
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                NumberInput("宽:", p.w) { onChange(p.x, p.y, it, p.h, p.colGap, p.rowGap, p.colCount, p.rowCount) }
-                NumberInput("高:", p.h) { onChange(p.x, p.y, p.w, it, p.colGap, p.rowGap, p.colCount, p.rowCount) }
-            }
-
-            Spacer(Modifier.height(6.dp))
-
-            // 3. 列设置
-            LabelRow("列间距 (Gap)")
-            // 【修复】加了 Row 包裹
-            Row {
-                NumberInput("距:", p.colGap) { onChange(p.x, p.y, p.w, p.h, it, p.rowGap, p.colCount, p.rowCount) }
-            }
-
-            LabelRow("列切割数量")
-            // 【修复】加了 Row 包裹
-            Row {
-                NumberInput("数:", p.colCount) { onChange(p.x, p.y, p.w, p.h, p.colGap, p.rowGap, it, p.rowCount) }
-            }
-
-            Spacer(Modifier.height(6.dp))
-
-            // 4. 行设置
-            LabelRow("行间距 (Gap)")
-            // 【修复】加了 Row 包裹
-            Row {
-                NumberInput("距:", p.rowGap) { onChange(p.x, p.y, p.w, p.h, p.colGap, it, p.colCount, p.rowCount) }
-            }
-
-            LabelRow("行切割数量")
-            // 【修复】加了 Row 包裹
-            Row {
-                NumberInput("数:", p.rowCount) { onChange(p.x, p.y, p.w, p.h, p.colGap, p.rowGap, p.colCount, it) }
-            }
-        }
-    }
-}
-
-@Composable
-fun LabelRow(text: String) {
-    Text(text, fontSize = 11.sp, color = Color.DarkGray, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 2.dp))
-}
-
-@Composable
-fun RowScope.NumberInput(label: String, value: Int, onValueChange: (Int) -> Unit) {
-    Row(
-        modifier = Modifier.weight(1f).height(30.dp).background(Color.White, RoundedCornerShape(2.dp)).border(1.dp, Color.Gray, RoundedCornerShape(2.dp)),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(label, fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp, end = 2.dp), color = Color.Gray)
-        BasicTextField(
-            value = value.toString(),
-            onValueChange = { str ->
-                // 只允许输入数字
-                if (str.isEmpty()) onValueChange(0)
-                else str.toIntOrNull()?.let { onValueChange(it) }
-            },
-            textStyle = TextStyle(fontSize = 12.sp, textAlign = TextAlign.Start),
-            singleLine = true,
-            modifier = Modifier.weight(1f).padding(vertical = 4.dp)
-        )
     }
 }
