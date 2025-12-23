@@ -20,6 +20,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -211,20 +213,28 @@ fun Workspace(
                         transformOrigin = TransformOrigin.Center
                     }
                 ) {
-                    charRects.forEach { rect ->
-                        // 绘制绿色边框
-                        drawRect(
-                            color = Color.Green,
-                            topLeft = rect.topLeft,
-                            size = rect.size,
-                            style = Stroke(width = 1f / scale) // 线条宽度随缩放反向调整，保持视觉一致
-                        )
-                        // 可选：绘制半透明填充
-                        drawRect(
-                            color = Color.Green.copy(alpha = 0.2f),
-                            topLeft = rect.topLeft,
-                            size = rect.size
-                        )
+                    // 【关键修复】使用 withTransform 应用 Fit 布局的偏移和缩放
+                    // 这样 Canvas 的坐标系就和 Image (ContentScale.Fit) 完全重合了
+                    withTransform({
+                        translate(left = fitOffsetX, top = fitOffsetY)
+                        scale(scale = fitScale, pivot = Offset.Zero)
+                    }) {
+                        charRects.forEach { rect ->
+                            // 绘制绿色边框
+                            drawRect(
+                                color = Color.Green,
+                                topLeft = rect.topLeft,
+                                size = rect.size,
+                                // 线条宽度需要除以总缩放倍数，保持视觉粗细一致
+                                style = Stroke(width = 2f / (scale * fitScale))
+                            )
+                            // 可选：绘制半透明填充
+                            drawRect(
+                                color = Color.Green.copy(alpha = 0.1f),
+                                topLeft = rect.topLeft,
+                                size = rect.size
+                            )
+                        }
                     }
                 }
                 // 红框绘制 (Canvas 还是放在这里，因为它需要跟随底层坐标，或者直接画在屏幕坐标上)
