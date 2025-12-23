@@ -130,4 +130,36 @@ object ImageUtils {
         }
         return result
     }
+
+    /**
+     * 网格切割算法 (定距切割)
+     */
+    fun generateGridRects(
+        startX: Int,
+        startY: Int,
+        width: Int,
+        height: Int,
+        colGap: Int, // 列间距
+        rowGap: Int, // 行间距
+        colCount: Int,
+        rowCount: Int
+    ): List<Rect> {
+        val list = mutableListOf<Rect>()
+        if (width <= 0 || height <= 0) return list
+
+        for (r in 0 until rowCount) {
+            for (c in 0 until colCount) {
+                // 计算每个格子的左上角坐标
+                // 公式：起点 + 索引 * (文字宽 + 间距)
+                val left = startX + c * (width + colGap)
+                val top = startY + r * (height + rowGap)
+                val right = left + width
+                val bottom = top + height
+
+                list.add(Rect(left.toFloat(), top.toFloat(), right.toFloat(), bottom.toFloat()))
+            }
+        }
+        return list
+    }
 }
+

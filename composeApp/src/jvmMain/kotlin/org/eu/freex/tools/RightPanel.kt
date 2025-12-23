@@ -1,13 +1,10 @@
 package org.eu.freex.tools
 
 
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items // 必需
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.*
@@ -18,11 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.FilterQuality
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.graphics.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -54,13 +47,19 @@ fun RightPanel(
     showBinary: Boolean,
     onTogglePreview: () -> Unit,
     onAutoSegment: () -> Unit,
-    onClearSegments: () -> Unit
+    onClearSegments: () -> Unit,
+    // 新增参数
+    isGridMode: Boolean,
+    onToggleGridMode: (Boolean) -> Unit,
+    gridParams: GridParams,
+    onGridParamChange: (Int, Int, Int, Int, Int, Int, Int, Int) -> Unit
 ) {
     Column(
         modifier = modifier
             .fillMaxHeight()
             .background(Color(0xFFEEEEEE))
             .padding(16.dp)
+            .verticalScroll(rememberScrollState()) // 防止高度不够，允许滚动
     ) {
         // 1. 全图二值化预览
         Text("全图二值化预览", style = MaterialTheme.typography.subtitle2, fontWeight = FontWeight.Bold)
@@ -162,6 +161,31 @@ fun RightPanel(
             colors = TextFieldDefaults.outlinedTextFieldColors(backgroundColor = Color.White)
         )
 
+        // --- 切割模式切换 ---
+        Row(Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(4.dp)).border(1.dp, Color.Gray, RoundedCornerShape(4.dp))) {
+            TabButton(text = "智能识别", isSelected = !isGridMode, onClick = { onToggleGridMode(false) }, modifier = Modifier.weight(1f))
+            TabButton(text = "定距切割", isSelected = isGridMode, onClick = { onToggleGridMode(true) }, modifier = Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(8.dp))
+
+        if (!isGridMode) {
+            // --- 智能识别模式 UI (原有按钮) ---
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Button(
+                    onClick = onAutoSegment,
+                    modifier = Modifier.weight(1f).height(36.dp),
+                    contentPadding = PaddingValues(0.dp)
+                ) { Text("自动计算范围", fontSize = 12.sp) }
+                Spacer(Modifier.width(8.dp))
+                OutlinedButton(onClick = onClearSegments, modifier = Modifier.width(60.dp).height(36.dp), contentPadding = PaddingValues(0.dp)) { Text("清空", fontSize = 12.sp) }
+            }
+        } else {
+            // --- 定距切割模式 UI (仿截图) ---
+            GridSettingsPanel(
+                p = gridParams,
+                onChange = onGridParamChange
+            )
+        }
         Spacer(Modifier.height(12.dp))
 
         // 4. 规则列表 (Header)
@@ -339,6 +363,101 @@ fun ColorRuleRow(
             contentDescription = null,
             modifier = Modifier.size(16.dp).clickable { onRemove() },
             tint = Color.Gray
+        )
+    }
+}
+
+@Composable
+fun TabButton(text: String, isSelected: Boolean, onClick: () -> Unit, modifier: Modifier) {
+    Box(
+        modifier = modifier
+            .height(32.dp)
+            .background(if (isSelected) Color(0xFF673AB7) else Color.Transparent)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text, color = if (isSelected) Color.White else Color.Black, fontSize = 12.sp)
+    }
+}
+
+@Composable
+fun GridSettingsPanel(
+    p: GridParams,
+    onChange: (Int, Int, Int, Int, Int, Int, Int, Int) -> Unit
+) {
+    Card(elevation = 2.dp, backgroundColor = Color(0xFFF5F5F5), border = BorderStroke(1.dp, Color.Gray)) {
+        Column(Modifier.padding(8.dp)) {
+            // 1. 起点位置
+            LabelRow("起点位置: x, y")
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                NumberInput("左:", p.x) { onChange(it, p.y, p.w, p.h, p.colGap, p.rowGap, p.colCount, p.rowCount) }
+                NumberInput("上:", p.y) { onChange(p.x, it, p.w, p.h, p.colGap, p.rowGap, p.colCount, p.rowCount) }
+            }
+
+            Spacer(Modifier.height(6.dp))
+
+            // 2. 切割大小
+            LabelRow("切割大小: 宽, 高")
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                NumberInput("宽:", p.w) { onChange(p.x, p.y, it, p.h, p.colGap, p.rowGap, p.colCount, p.rowCount) }
+                NumberInput("高:", p.h) { onChange(p.x, p.y, p.w, it, p.colGap, p.rowGap, p.colCount, p.rowCount) }
+            }
+
+            Spacer(Modifier.height(6.dp))
+
+            // 3. 列设置
+            LabelRow("列间距 (Gap)")
+            // 【修复】加了 Row 包裹
+            Row {
+                NumberInput("距:", p.colGap) { onChange(p.x, p.y, p.w, p.h, it, p.rowGap, p.colCount, p.rowCount) }
+            }
+
+            LabelRow("列切割数量")
+            // 【修复】加了 Row 包裹
+            Row {
+                NumberInput("数:", p.colCount) { onChange(p.x, p.y, p.w, p.h, p.colGap, p.rowGap, it, p.rowCount) }
+            }
+
+            Spacer(Modifier.height(6.dp))
+
+            // 4. 行设置
+            LabelRow("行间距 (Gap)")
+            // 【修复】加了 Row 包裹
+            Row {
+                NumberInput("距:", p.rowGap) { onChange(p.x, p.y, p.w, p.h, p.colGap, it, p.colCount, p.rowCount) }
+            }
+
+            LabelRow("行切割数量")
+            // 【修复】加了 Row 包裹
+            Row {
+                NumberInput("数:", p.rowCount) { onChange(p.x, p.y, p.w, p.h, p.colGap, p.rowGap, p.colCount, it) }
+            }
+        }
+    }
+}
+
+@Composable
+fun LabelRow(text: String) {
+    Text(text, fontSize = 11.sp, color = Color.DarkGray, fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 2.dp))
+}
+
+@Composable
+fun RowScope.NumberInput(label: String, value: Int, onValueChange: (Int) -> Unit) {
+    Row(
+        modifier = Modifier.weight(1f).height(30.dp).background(Color.White, RoundedCornerShape(2.dp)).border(1.dp, Color.Gray, RoundedCornerShape(2.dp)),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp, end = 2.dp), color = Color.Gray)
+        BasicTextField(
+            value = value.toString(),
+            onValueChange = { str ->
+                // 只允许输入数字
+                if (str.isEmpty()) onValueChange(0)
+                else str.toIntOrNull()?.let { onValueChange(it) }
+            },
+            textStyle = TextStyle(fontSize = 12.sp, textAlign = TextAlign.Start),
+            singleLine = true,
+            modifier = Modifier.weight(1f).padding(vertical = 4.dp)
         )
     }
 }

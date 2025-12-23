@@ -48,6 +48,18 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
     // 存储自动切割出的字符框列表
     var charRects by remember { mutableStateOf<List<Rect>>(emptyList()) }
 
+    // --- 新增：网格切割参数状态 ---
+    var isGridMode by remember { mutableStateOf(false) } // 模式切换：自动 vs 网格
+    var gridX by remember { mutableStateOf(0) }
+    var gridY by remember { mutableStateOf(0) }
+    var gridW by remember { mutableStateOf(15) }
+    var gridH by remember { mutableStateOf(15) }
+    var gridColGap by remember { mutableStateOf(0) }
+    var gridRowGap by remember { mutableStateOf(0) }
+    var gridColCount by remember { mutableStateOf(1) }
+    var gridRowCount by remember { mutableStateOf(1) }
+    // ----------------------------
+
     val scope = rememberCoroutineScope()
 
     fun addImage(bufferedImage: BufferedImage, name: String) {
@@ -55,6 +67,14 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
         currentIndex = imageList.lastIndex
         mainScale = 1f; mainOffset = Offset.Zero
         isCropMode = false
+    }
+    LaunchedEffect(isGridMode, gridX, gridY, gridW, gridH, gridColGap, gridRowGap, gridColCount, gridRowCount) {
+        if (isGridMode) {
+            // 只要参数一变，立即重新计算框框
+            charRects = ImageUtils.generateGridRects(
+                gridX, gridY, gridW, gridH, gridColGap, gridRowGap, gridColCount, gridRowCount
+            )
+        }
     }
 
     fun loadFile(file: File) {
@@ -187,6 +207,15 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
                         }
                     }
                 },
+                // 传递网格参数给右侧面板
+                isGridMode = isGridMode,
+                onToggleGridMode = { isGridMode = it },
+                gridParams = GridParams(gridX, gridY, gridW, gridH, gridColGap, gridRowGap, gridColCount, gridRowCount),
+                onGridParamChange = { x, y, w, h, cg, rg, cc, rc ->
+                    gridX = x; gridY = y; gridW = w; gridH = h
+                    gridColGap = cg; gridRowGap = rg
+                    gridColCount = cc; gridRowCount = rc
+                },
                 // 新增回调：清除切割
                 onClearSegments = { charRects = emptyList() }
             )
@@ -205,3 +234,10 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
         )
     }
 }
+
+// 辅助数据类，方便传递参数
+data class GridParams(
+    val x: Int, val y: Int, val w: Int, val h: Int,
+    val colGap: Int, val rowGap: Int,
+    val colCount: Int, val rowCount: Int
+)
