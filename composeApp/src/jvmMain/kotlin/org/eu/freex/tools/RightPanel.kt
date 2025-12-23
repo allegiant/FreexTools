@@ -52,7 +52,9 @@ fun RightPanel(
     onRuleRemove: (Long) -> Unit,
     onClearRules: () -> Unit,
     showBinary: Boolean,
-    onTogglePreview: () -> Unit
+    onTogglePreview: () -> Unit,
+    onAutoSegment: () -> Unit,
+    onClearSegments: () -> Unit
 ) {
     Column(
         modifier = modifier
@@ -75,6 +77,26 @@ fun RightPanel(
                 BinaryPreviewScope(rawImage = rawImage, colorRules = colorRules)
             } else {
                 Text("暂无图片", color = Color.Gray, modifier = Modifier.align(Alignment.Center), fontSize = 12.sp)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Button(
+                onClick = onAutoSegment,
+                modifier = Modifier.weight(1f).height(36.dp),
+                contentPadding = PaddingValues(0.dp)
+            ) {
+                Text("自动计算点阵范围", fontSize = 12.sp)
+            }
+
+            Spacer(Modifier.width(8.dp))
+
+            OutlinedButton(
+                onClick = onClearSegments,
+                modifier = Modifier.width(60.dp).height(36.dp),
+                contentPadding = PaddingValues(0.dp)
+            ) {
+                Text("清空", fontSize = 12.sp)
             }
         }
 

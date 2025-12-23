@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.unit.IntOffset
@@ -44,6 +45,8 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
     var showBinaryPreview by remember { mutableStateOf(false) }
     var showScreenCropper by remember { mutableStateOf(false) }
     var fullScreenCapture by remember { mutableStateOf<BufferedImage?>(null) }
+    // 存储自动切割出的字符框列表
+    var charRects by remember { mutableStateOf<List<Rect>>(emptyList()) }
 
     val scope = rememberCoroutineScope()
 
@@ -139,7 +142,11 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
                         addImage(newImg, "裁剪 ${imageList.size + 1}")
                     }
                 },
-                colorRules = colorRules
+                colorRules = colorRules,
+                // 传进去用于绘制
+                charRects = charRects,
+                // 点击某个框时的回调（可选，暂时留空后续做选中逻辑）
+                onCharRectClick = { rect -> println("Selected: $rect") }
             )
 
             RightPanel(
@@ -164,7 +171,24 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
                 onRuleRemove = { id -> colorRules.removeIf { it.id == id } },
                 onClearRules = { colorRules.clear() },
                 showBinary = showBinaryPreview,
-                onTogglePreview = { showBinaryPreview = !showBinaryPreview }
+                onTogglePreview = { showBinaryPreview = !showBinaryPreview },
+                // 新增回调：执行切割
+                onAutoSegment = {
+                    currentImage?.let { workImg ->
+                        scope.launch(Dispatchers.Default) {
+                            // 过滤出启用的规则
+                            val activeRules = colorRules.filter { it.isEnabled }
+                            if (activeRules.isNotEmpty()) {
+                                val rects = ImageUtils.scanConnectedComponents(workImg.bufferedImage, activeRules)
+                                withContext(Dispatchers.Main) {
+                                    charRects = rects
+                                }
+                            }
+                        }
+                    }
+                },
+                // 新增回调：清除切割
+                onClearSegments = { charRects = emptyList() }
             )
         }
 

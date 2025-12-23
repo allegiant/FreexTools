@@ -45,7 +45,9 @@ fun Workspace(
     onHoverChange: (IntOffset?, Color) -> Unit,
     onColorPick: (String) -> Unit,
     onCropConfirm: (Rect) -> Unit,
-    colorRules: List<ColorRule>
+    colorRules: List<ColorRule>,
+    charRects: List<Rect>,
+    onCharRectClick: (Rect) -> Unit
 ) {
     // 1. 使用 rememberUpdatedState以此在不重启 pointerInput 的情况下获取最新值
     val currentScaleState = rememberUpdatedState(scale)
@@ -72,17 +74,19 @@ fun Workspace(
 
         if (workImage != null) {
             val rawImg = workImage.bufferedImage
+            // ... 计算 fitScale, fitOffsetX 等保持不变 ...
             val fitScale = min(containerW / rawImg.width, containerH / rawImg.height)
             val fitOffsetX = (containerW - rawImg.width * fitScale) / 2f
             val fitOffsetY = (containerH - rawImg.height * fitScale) / 2f
 
+            // 【第一层】手势处理层 + 图片显示
+            // 这一层只负责显示图片和处理手势，不要放按钮！
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    // 【核心修复】
-                    // Keys 只填 workImage 和 isCropMode。
-                    // 绝对不要填 scale 和 offset，否则一动就重置！
                     .pointerInput(workImage, isCropMode) {
+                        // ... 原有的 pointerInput 逻辑完全不变，直接复制过来 ...
+                        // 包含 scroll, press, drag, move 等逻辑
                         awaitPointerEventScope {
                             while (true) {
                                 val event = awaitPointerEvent()
@@ -102,7 +106,6 @@ fun Workspace(
                                 // 2. 按下 (点击或拖拽开始)
                                 else if (event.type == PointerEventType.Press) {
                                     val startPos = currentPos
-                                    // 记录按下瞬间的 offset 作为基准
                                     val startOffset = currentOffsetState.value
                                     var hasDragMoved = false
 
@@ -111,19 +114,15 @@ fun Workspace(
                                         cropCurrent = startPos
                                     }
 
-                                    // 拖拽循环
                                     do {
                                         val dragEvent = awaitPointerEvent()
                                         val dragChange = dragEvent.changes.firstOrNull { it.id == mainChange.id } ?: continue
 
                                         if (dragChange.pressed) {
                                             val dragAmount = dragChange.position - startPos
-
-                                            // 拖拽阈值判断
                                             if (!hasDragMoved && dragAmount.getDistance() > 5f) {
                                                 hasDragMoved = true
                                                 isDragging = true
-                                                // 拖拽开始，清理悬停
                                                 currentMousePos = null
                                                 currentHoverPixel = null
                                                 onHoverChange(null, Color.Transparent)
@@ -133,8 +132,6 @@ fun Workspace(
                                                 if (isCropMode) {
                                                     cropCurrent = dragChange.position
                                                 } else {
-                                                    // 【核心】使用 currentScaleState.value 获取最新缩放
-                                                    // 使用 startOffset + dragAmount 计算新位置（绝对位移，不累积误差）
                                                     onTransformChange(currentScaleState.value, startOffset + dragAmount)
                                                 }
                                                 dragChange.consume()
@@ -144,7 +141,6 @@ fun Workspace(
 
                                     // 3. 点击 (抬起且未拖拽)
                                     if (!hasDragMoved && !isCropMode) {
-                                        // 此时 offset 没变，可以直接用 startOffset
                                         val (imgX, imgY) = MathUtils.mapScreenToImage(
                                             startPos, startOffset, currentScaleState.value,
                                             containerW, containerH, fitOffsetX, fitOffsetY, fitScale
@@ -154,11 +150,10 @@ fun Workspace(
                                             onColorPick(String.format("%06X", rgb and 0xFFFFFF))
                                         }
                                     }
-
                                     isDragging = false
                                 }
 
-                                // 4. 悬停 (Move)
+                                // 4. 悬停
                                 else if (event.type == PointerEventType.Move && !isDragging) {
                                     currentMousePos = currentPos
                                     val (imgX, imgY) = MathUtils.mapScreenToImage(
@@ -192,7 +187,7 @@ fun Workspace(
                         }
                     }
             ) {
-                // Image 和其他 UI 保持不变，直接复制即可
+                // 图片
                 Image(
                     bitmap = workImage.bitmap,
                     contentDescription = null,
@@ -206,7 +201,33 @@ fun Workspace(
                     },
                     contentScale = ContentScale.Fit
                 )
-
+                // 2. 绘制字符切割框 (跟随图片缩放平移)
+                Canvas(
+                    modifier = Modifier.fillMaxSize().graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                        translationX = offset.x
+                        translationY = offset.y
+                        transformOrigin = TransformOrigin.Center
+                    }
+                ) {
+                    charRects.forEach { rect ->
+                        // 绘制绿色边框
+                        drawRect(
+                            color = Color.Green,
+                            topLeft = rect.topLeft,
+                            size = rect.size,
+                            style = Stroke(width = 1f / scale) // 线条宽度随缩放反向调整，保持视觉一致
+                        )
+                        // 可选：绘制半透明填充
+                        drawRect(
+                            color = Color.Green.copy(alpha = 0.2f),
+                            topLeft = rect.topLeft,
+                            size = rect.size
+                        )
+                    }
+                }
+                // 红框绘制 (Canvas 还是放在这里，因为它需要跟随底层坐标，或者直接画在屏幕坐标上)
                 if (isCropMode && cropStart != null && cropCurrent != null) {
                     val rect = Rect(
                         left = min(cropStart!!.x, cropCurrent!!.x),
@@ -217,38 +238,60 @@ fun Workspace(
                     Canvas(Modifier.fillMaxSize()) {
                         drawRect(Color.Red, topLeft = rect.topLeft, size = rect.size, style = Stroke(2f))
                     }
-                    Button(
-                        onClick = {
-                            val (x1, y1) = MathUtils.mapScreenToImage(rect.topLeft, offset, scale, containerW, containerH, fitOffsetX, fitOffsetY, fitScale)
-                            val (x2, y2) = MathUtils.mapScreenToImage(rect.bottomRight, offset, scale, containerW, containerH, fitOffsetX, fitOffsetY, fitScale)
-                            val cropRect = Rect(min(x1, x2).toFloat(), min(y1, y2).toFloat(), max(x1, x2).toFloat(), max(y1, y2).toFloat())
-                            onCropConfirm(cropRect)
-                            cropStart = null; cropCurrent = null
-                        },
-                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 20.dp)
-                    ) { Text("确认裁剪") }
+                    // 【注意】Button 从这里移走了！
                 }
-
-                FloatingPixelGrid(
-                    modifier = Modifier
-                        .zIndex(10f)
-                        .graphicsLayer {
-                            val show = !isCropMode && !isDragging && currentMousePos != null && currentHoverPixel != null
-                            if (show) {
-                                alpha = 1f
-                                val pos = currentMousePos ?: Offset.Zero
-                                translationX = pos.x + 20f
-                                translationY = pos.y + 20f
-                            } else {
-                                alpha = 0f
-                                translationX = -10000f
-                                translationY = -10000f
-                            }
-                        },
-                    rawImage = rawImg,
-                    centerPixel = currentHoverPixel ?: IntOffset.Zero
-                )
             }
+
+            // 【第二层】悬浮 UI 层
+            // 放在这里（BoxWithConstraints 的直接子级，且在 Box 之后），它会覆盖在手势层之上
+            // 点击这里的 Button 不会穿透到底层的 pointerInput
+            if (isCropMode && cropStart != null && cropCurrent != null) {
+                // 重新计算 rect 仅用于逻辑，或者复用状态
+                val rect = Rect(
+                    left = min(cropStart!!.x, cropCurrent!!.x),
+                    top = min(cropStart!!.y, cropCurrent!!.y),
+                    right = max(cropStart!!.x, cropCurrent!!.x),
+                    bottom = max(cropStart!!.y, cropCurrent!!.y)
+                )
+
+                Button(
+                    onClick = {
+                        val (x1, y1) = MathUtils.mapScreenToImage(rect.topLeft, offset, scale, containerW, containerH, fitOffsetX, fitOffsetY, fitScale)
+                        val (x2, y2) = MathUtils.mapScreenToImage(rect.bottomRight, offset, scale, containerW, containerH, fitOffsetX, fitOffsetY, fitScale)
+                        val cropRect = Rect(min(x1, x2).toFloat(), min(y1, y2).toFloat(), max(x1, x2).toFloat(), max(y1, y2).toFloat())
+
+                        // 你的调试代码
+                        println("调试: 图片尺寸 w=${rawImg.width} h=${rawImg.height}, 裁剪区域 x1=$x1 y1=$y1 x2=$x2 y2=$y2")
+
+                        onCropConfirm(cropRect)
+                        cropStart = null; cropCurrent = null
+                    },
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 20.dp)
+                ) { Text("确认裁剪") }
+            }
+
+            // 【第三层】悬浮像素网格 (保持不变)
+            FloatingPixelGrid(
+                modifier = Modifier
+                    .zIndex(10f)
+                    .graphicsLayer {
+                        // ... 保持不变 ...
+                        val show = !isCropMode && !isDragging && currentMousePos != null && currentHoverPixel != null
+                        if (show) {
+                            alpha = 1f
+                            val pos = currentMousePos ?: Offset.Zero
+                            translationX = pos.x + 20f
+                            translationY = pos.y + 20f
+                        } else {
+                            alpha = 0f
+                            translationX = -10000f
+                            translationY = -10000f
+                        }
+                    },
+                rawImage = rawImg,
+                centerPixel = currentHoverPixel ?: IntOffset.Zero
+            )
+
         } else {
             Text("请拖拽图片到此处", color = Color.Gray, modifier = Modifier.align(Alignment.Center))
         }
