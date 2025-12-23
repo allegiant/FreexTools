@@ -129,7 +129,7 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
                 onTransformChange = { s, o -> mainScale = s; mainOffset = o },
                 onHoverChange = { pos, col -> hoverPixelPos = pos; hoverColor = col },
                 onColorPick = { hex ->
-                    if (colorRules.none { it.targetHex == hex }) {
+                    if (colorRules.size < 10 && colorRules.none { it.targetHex == hex }) {
                         colorRules.add(ColorRule(targetHex = hex, biasHex = defaultBias))
                     }
                 },
@@ -155,6 +155,11 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
                 onRuleUpdate = { id, newBias ->
                     val index = colorRules.indexOfFirst { it.id == id }
                     if (index != -1) colorRules[index] = colorRules[index].copy(biasHex = newBias)
+                },
+                // 新增：处理启用状态切换
+                onRuleToggle = { id, enabled ->
+                    val index = colorRules.indexOfFirst { it.id == id }
+                    if (index != -1) colorRules[index] = colorRules[index].copy(isEnabled = enabled)
                 },
                 onRuleRemove = { id -> colorRules.removeIf { it.id == id } },
                 onClearRules = { colorRules.clear() },
