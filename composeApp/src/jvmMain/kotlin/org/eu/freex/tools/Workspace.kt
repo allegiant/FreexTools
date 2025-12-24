@@ -107,6 +107,32 @@ fun Workspace(
             val fitOffsetX = (containerW - rawImg.width * fitScale) / 2f
             val fitOffsetY = (containerH - rawImg.height * fitScale) / 2f
 
+            // 【核心修复】监听 scale 和 offset 变化，实时重新计算悬停位置
+            // 解决缩放/平移时鼠标不动导致放大镜取色位置偏移的问题
+            LaunchedEffect(scale, offset, workImage) {
+                if (currentMousePos != null && !isDragging) {
+                    val (imgX, imgY) = MathUtils.mapScreenToImage(
+                        currentMousePos!!, offset, scale,
+                        containerW, containerH, fitOffsetX, fitOffsetY, fitScale
+                    )
+
+                    if (currentHoverPixel?.x != imgX || currentHoverPixel?.y != imgY) {
+                        if (imgX in 0 until rawImg.width && imgY in 0 until rawImg.height) {
+                            val rgb = rawImg.getRGB(imgX, imgY)
+                            val awtColor = java.awt.Color(rgb, true)
+                            onHoverChange(
+                                IntOffset(imgX, imgY),
+                                Color(awtColor.red, awtColor.green, awtColor.blue, awtColor.alpha)
+                            )
+                            currentHoverPixel = IntOffset(imgX, imgY)
+                        } else {
+                            onHoverChange(null, Color.Transparent)
+                            currentHoverPixel = null
+                        }
+                    }
+                }
+            }
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -135,12 +161,9 @@ fun Workspace(
                                     val isRightClick = event.buttons.isSecondaryPressed
                                     var hasDragMoved = false
 
-                                    // 【核心逻辑】按下时，记录当前是否有选区
                                     val existingRect = getCropRect()
                                     val isClickInsideSelection = existingRect?.contains(startPos) == true
 
-                                    // 如果不是点击内部，且是左键，则准备开始新选区（重置起点）
-                                    // 注意：我们这里不立即清除，而是在拖拽发生后或释放时处理，以支持逻辑判断
                                     if (isLeftClick && !isClickInsideSelection) {
                                         cropStart = startPos
                                         cropCurrent = startPos
@@ -156,7 +179,7 @@ fun Workspace(
                                                 hasDragMoved = true
                                                 isDragging = true
                                                 // 拖拽开始，隐藏放大镜
-                                                currentMousePos = null
+                                                // currentMousePos = null // 注释掉此行，保留位置以便拖拽结束后恢复
                                                 currentHoverPixel = null
                                                 onHoverChange(null, Color.Transparent)
                                             }
@@ -167,8 +190,7 @@ fun Workspace(
                                                     onTransformChange(currentScaleState.value, startOffset + dragAmount)
                                                 } else if (isLeftClick) {
                                                     // 左键拖拽 -> 更新选区
-                                                    // 只要发生拖拽，就强制进入"选区模式"，覆盖之前的任何选区状态
-                                                    if (cropStart == null) cropStart = startPos // 容错
+                                                    if (cropStart == null) cropStart = startPos
                                                     cropCurrent = dragChange.position
                                                 }
                                                 dragChange.consume()
@@ -176,32 +198,25 @@ fun Workspace(
                                         }
                                     } while (dragEvent.changes.any { it.pressed })
 
-                                    // 3. 释放 (Release) - 未发生拖拽
+                                    // 3. 释放 (Release)
                                     if (!hasDragMoved && isLeftClick) {
                                         val now = System.currentTimeMillis()
                                         val isDoubleClick = (now - lastClickTime) < 300
                                         lastClickTime = now
 
                                         if (existingRect != null) {
-                                            // --- Case A: 之前已经有选区 ---
                                             if (isClickInsideSelection) {
-                                                // 点击选区内部
                                                 if (isDoubleClick) {
-                                                    // 双击内部 -> 确认裁剪
                                                     val (x1, y1) = MathUtils.mapScreenToImage(existingRect.topLeft, offset, scale, containerW, containerH, fitOffsetX, fitOffsetY, fitScale)
                                                     val (x2, y2) = MathUtils.mapScreenToImage(existingRect.bottomRight, offset, scale, containerW, containerH, fitOffsetX, fitOffsetY, fitScale)
                                                     val imgCropRect = Rect(min(x1, x2).toFloat(), min(y1, y2).toFloat(), max(x1, x2).toFloat(), max(x1, x2).toFloat())
                                                     onCropConfirm(imgCropRect)
                                                     clearSelection()
                                                 }
-                                                // 单击内部 -> 不做任何事（不取色，也不清除选区）
                                             } else {
-                                                // 点击选区外部 -> 清除选区，不取色
                                                 clearSelection()
                                             }
                                         } else {
-                                            // --- Case B: 之前没有选区 ---
-                                            // 执行取色逻辑
                                             val (imgX, imgY) = MathUtils.mapScreenToImage(
                                                 startPos, startOffset, currentScaleState.value,
                                                 containerW, containerH, fitOffsetX, fitOffsetY, fitScale
@@ -213,6 +228,8 @@ fun Workspace(
                                         }
                                     }
                                     isDragging = false
+                                    // 拖拽结束，手动触发一次更新以恢复放大镜（如果鼠标在有效区域）
+                                    // 由于 LaunchedEffect 依赖 scale/offset，这里如果仅是点击没变变换，依靠 Move 恢复
                                 }
 
                                 // 4. 悬停 (Move)
@@ -311,7 +328,6 @@ fun Workspace(
                         drawRect(Color.Red, topLeft = currentRect.topLeft, size = currentRect.size, style = Stroke(2f))
                     }
 
-                    // 仅当选区足够大时显示提示
                     if (currentRect.width > 30 && currentRect.height > 30) {
                         Box(
                             modifier = Modifier
@@ -325,11 +341,12 @@ fun Workspace(
                 }
             }
 
-            // 5. 悬浮放大镜 (保持不变)
+            // 5. 悬浮放大镜
             FloatingPixelGrid(
                 modifier = Modifier
                     .zIndex(10f)
                     .graphicsLayer {
+                        // 修复：确保不仅要 isDragging 为 false，还要确保 currentMousePos 是最新的（由 LaunchedEffect 保证数据一致性）
                         val show = !isDragging && currentMousePos != null && currentHoverPixel != null
                         if (show) {
                             alpha = 1f
