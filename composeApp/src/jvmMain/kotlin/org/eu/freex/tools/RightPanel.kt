@@ -96,29 +96,6 @@ fun RightPanel(
 
         Divider(Modifier.padding(vertical = 12.dp))
 
-        // 3. 鼠标信息
-        val isHoverValid = rawImage != null && hoverPixelPos != null &&
-                hoverPixelPos.x >= 0 && hoverPixelPos.x < rawImage.width &&
-                hoverPixelPos.y >= 0 && hoverPixelPos.y < rawImage.height
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            val safeColor = if (isHoverValid) hoverColor else Color.Transparent
-            Box(Modifier.size(16.dp).background(safeColor).border(1.dp, Color.Gray))
-            Spacer(Modifier.width(8.dp))
-            if (isHoverValid) {
-                val hex = String.format("#%02X%02X%02X", (safeColor.red*255).toInt(), (safeColor.green*255).toInt(), (safeColor.blue*255).toInt())
-                Text(hex, style = MaterialTheme.typography.caption, fontWeight = FontWeight.Bold)
-            } else {
-                Text("#------", style = MaterialTheme.typography.caption, color = Color.Gray)
-            }
-            Spacer(Modifier.weight(1f))
-            if (hoverPixelPos != null) {
-                Text("(${hoverPixelPos.x}, ${hoverPixelPos.y})", style = MaterialTheme.typography.caption, color = Color.Gray)
-            }
-        }
-
-        Spacer(Modifier.height(12.dp))
-
         // 4. 默认偏色
         Text("新取色默认偏色", style = MaterialTheme.typography.caption, color = Color.Gray)
         OutlinedTextField(

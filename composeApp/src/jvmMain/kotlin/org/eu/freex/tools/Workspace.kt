@@ -4,12 +4,8 @@ package org.eu.freex.tools
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Card
 import androidx.compose.material.Text
@@ -20,19 +16,17 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.FilterQuality
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.withTransform
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -171,7 +165,8 @@ fun Workspace(
 
                                     do {
                                         val dragEvent = awaitPointerEvent()
-                                        val dragChange = dragEvent.changes.firstOrNull { it.id == mainChange.id } ?: continue
+                                        val dragChange =
+                                            dragEvent.changes.firstOrNull { it.id == mainChange.id } ?: continue
 
                                         if (dragChange.pressed) {
                                             val dragAmount = dragChange.position - startPos
@@ -207,9 +202,32 @@ fun Workspace(
                                         if (existingRect != null) {
                                             if (isClickInsideSelection) {
                                                 if (isDoubleClick) {
-                                                    val (x1, y1) = MathUtils.mapScreenToImage(existingRect.topLeft, offset, scale, containerW, containerH, fitOffsetX, fitOffsetY, fitScale)
-                                                    val (x2, y2) = MathUtils.mapScreenToImage(existingRect.bottomRight, offset, scale, containerW, containerH, fitOffsetX, fitOffsetY, fitScale)
-                                                    val imgCropRect = Rect(min(x1, x2).toFloat(), min(y1, y2).toFloat(), max(x1, x2).toFloat(), max(x1, x2).toFloat())
+                                                    val (x1, y1) = MathUtils.mapScreenToImage(
+                                                        existingRect.topLeft,
+                                                        offset,
+                                                        scale,
+                                                        containerW,
+                                                        containerH,
+                                                        fitOffsetX,
+                                                        fitOffsetY,
+                                                        fitScale
+                                                    )
+                                                    val (x2, y2) = MathUtils.mapScreenToImage(
+                                                        existingRect.bottomRight,
+                                                        offset,
+                                                        scale,
+                                                        containerW,
+                                                        containerH,
+                                                        fitOffsetX,
+                                                        fitOffsetY,
+                                                        fitScale
+                                                    )
+                                                    val imgCropRect = Rect(
+                                                        min(x1, x2).toFloat(),
+                                                        min(y1, y2).toFloat(),
+                                                        max(x1, x2).toFloat(),
+                                                        max(x1, x2).toFloat()
+                                                    )
                                                     onCropConfirm(imgCropRect)
                                                     clearSelection()
                                                 }
@@ -335,7 +353,11 @@ fun Workspace(
                                 .background(Color.Black.copy(0.7f), RoundedCornerShape(4.dp))
                                 .padding(4.dp)
                         ) {
-                            Text("双击区域确认", color = Color.White, style = androidx.compose.ui.text.TextStyle(fontSize = 12.sp))
+                            Text(
+                                "双击区域确认",
+                                color = Color.White,
+                                style = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+                            )
                         }
                     }
                 }
@@ -375,53 +397,108 @@ fun FloatingPixelGrid(
     rawImage: BufferedImage,
     centerPixel: IntOffset
 ) {
-    val boxSize = 90.dp
+    // 获取中心像素的颜色信息
+    var hexText = "#------"
+    var coordsText = "(-, -)"
+    var pixelColor = Color.Transparent
+
+    if (centerPixel.x in 0 until rawImage.width && centerPixel.y in 0 until rawImage.height) {
+        val rgbInt = rawImage.getRGB(centerPixel.x, centerPixel.y)
+        val r = (rgbInt shr 16) and 0xFF
+        val g = (rgbInt shr 8) and 0xFF
+        val b = rgbInt and 0xFF
+
+        pixelColor = Color(r / 255f, g / 255f, b / 255f)
+        hexText = String.format("#%02X%02X%02X", r, g, b)
+        coordsText = "(${centerPixel.x}, ${centerPixel.y})"
+    }
+
+    // 【调整】将宽度从 110.dp 缩小到 80.dp，让组件更精致
+    // 80dp / 5格 = 每格 16dp，大小适中
     Card(
-        modifier = modifier.size(boxSize),
-        elevation = 8.dp,
+        modifier = modifier
+            .width(80.dp)
+            .wrapContentHeight(),
+        elevation = 6.dp, //稍微降低阴影
         border = androidx.compose.foundation.BorderStroke(1.dp, Color.White),
         shape = RoundedCornerShape(4.dp)
     ) {
-        Canvas(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-            val w = size.width
-            val gridCount = 9
-            val radius = 4
-            val cellSize = w / gridCount.toFloat()
+        Column {
+            // 1. 像素网格区域 (5x5)
+            Box(Modifier.aspectRatio(1f).background(Color.Black)) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val w = size.width
+                    val gridCount = 5
+                    val radius = 2
+                    val cellSize = w / gridCount.toFloat()
 
-            for (dx in -radius..radius) {
-                for (dy in -radius..radius) {
-                    val px = centerPixel.x + dx
-                    val py = centerPixel.y + dy
-                    val drawX = (dx + radius) * cellSize
-                    val drawY = (dy + radius) * cellSize
+                    for (dx in -radius..radius) {
+                        for (dy in -radius..radius) {
+                            val px = centerPixel.x + dx
+                            val py = centerPixel.y + dy
+                            val drawX = (dx + radius) * cellSize
+                            val drawY = (dy + radius) * cellSize
 
-                    if (px in 0 until rawImage.width && py in 0 until rawImage.height) {
-                        val rgbInt = rawImage.getRGB(px, py)
-                        val color = Color(
-                            red = (rgbInt shr 16 and 0xFF) / 255f,
-                            green = (rgbInt shr 8 and 0xFF) / 255f,
-                            blue = (rgbInt and 0xFF) / 255f
-                        )
-                        drawRect(color = color, topLeft = Offset(drawX, drawY), size = Size(cellSize, cellSize))
-                    } else {
-                        drawRect(color = Color.Black, topLeft = Offset(drawX, drawY), size = Size(cellSize, cellSize))
+                            if (px in 0 until rawImage.width && py in 0 until rawImage.height) {
+                                val rgbInt = rawImage.getRGB(px, py)
+                                val color = Color(
+                                    red = (rgbInt shr 16 and 0xFF) / 255f,
+                                    green = (rgbInt shr 8 and 0xFF) / 255f,
+                                    blue = (rgbInt and 0xFF) / 255f
+                                )
+                                drawRect(color = color, topLeft = Offset(drawX, drawY), size = Size(cellSize, cellSize))
+                            } else {
+                                drawRect(color = Color.Black, topLeft = Offset(drawX, drawY), size = Size(cellSize, cellSize))
+                            }
+                            // 减淡网格线，使其不那么喧宾夺主
+                            drawRect(
+                                color = Color.Gray.copy(0.2f),
+                                topLeft = Offset(drawX, drawY),
+                                Size(cellSize, cellSize),
+                                style = Stroke(0.5f)
+                            )
+                        }
                     }
+
+                    // 中心红色高亮框 (线条稍微变细)
+                    val centerDrawX = radius * cellSize
+                    val centerDrawY = radius * cellSize
                     drawRect(
-                        color = Color.Gray.copy(0.3f),
-                        topLeft = Offset(drawX, drawY),
+                        color = Color.Red,
+                        topLeft = Offset(centerDrawX, centerDrawY),
                         Size(cellSize, cellSize),
-                        style = Stroke(0.5f)
+                        style = Stroke(1.0f)
                     )
                 }
             }
-            val centerDrawX = radius * cellSize
-            val centerDrawY = radius * cellSize
-            drawRect(
-                color = Color.Red,
-                topLeft = Offset(centerDrawX, centerDrawY),
-                Size(cellSize, cellSize),
-                style = Stroke(1.5f)
-            )
+
+            // 2. 底部信息栏 (紧凑排版)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.White)
+                    .padding(vertical = 3.dp, horizontal = 2.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Hex 值 (字体调小)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(8.dp).background(pixelColor).border(0.5.dp, Color.Gray))
+                    Spacer(Modifier.width(3.dp))
+                    Text(
+                        text = hexText,
+                        fontSize = 10.sp, // 缩小字体
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Black
+                    )
+                }
+                // 坐标值
+                Text(
+                    text = coordsText,
+                    fontSize = 9.sp, // 缩小字体
+                    color = Color.Gray,
+                    textAlign = TextAlign.Center
+                )
+            }
         }
     }
 }
