@@ -1,3 +1,4 @@
+// composeApp/src/jvmMain/kotlin/org/eu/freex/tools/model/WorkImage.kt
 package org.eu.freex.tools.model
 
 import androidx.compose.ui.geometry.Rect
@@ -9,9 +10,13 @@ data class WorkImage(
     val bufferedImage: BufferedImage,
     val name: String,
 
-    // --- [新增] 混合架构支持 ---
-    // 如果为 null，表示跟随全局规则；如果不为 null，表示该图片有私有参数（重载）
+    // UI显示的标签，如 "原图", "清除杂点", "二值化"
+    val label: String = name,
+    // 是否是二值化结果 (UI显示绿色，逻辑上作为最终输出)
+    val isBinary: Boolean = false,
+
+    // 继承的参数
     val localColorRules: List<ColorRule>? = null,
     val localBias: String? = null,
-    val localCropRects: List<Rect>? = null // 手动指定的裁剪框
+    val localCropRects: List<Rect>? = null
 )

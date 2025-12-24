@@ -1,8 +1,9 @@
+// 文件路径: composeApp/src/jvmMain/kotlin/org/eu/freex/tools/ImageProcessingWorkbench.kt
 package org.eu.freex.tools
 
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.Button
+import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -19,12 +20,9 @@ import org.eu.freex.tools.model.WorkImage
 @Composable
 fun ImageProcessingWorkbench(
     sourceImages: List<WorkImage>,
-    resultImages: List<WorkImage>, // 传入的是实时预览流 previewResults
     currentImage: WorkImage?,
 
-    // 状态
     selectedSourceIndex: Int,
-    selectedResultIndex: Int,
     activeSource: ActiveSource,
 
     mainScale: Float,
@@ -34,30 +32,23 @@ fun ImageProcessingWorkbench(
     colorRules: List<ColorRule>,
     defaultBias: String,
 
-    // 二值化全图预览
     binaryBitmap: ImageBitmap?,
-
     isGridMode: Boolean,
     gridParams: GridParams,
     charRects: List<Rect>,
-
-    // 新增：作用域控制
     currentScope: RuleScope,
     onToggleScope: () -> Unit,
 
-    // 回调
     onSelectSource: (Int) -> Unit,
-    onSelectResult: (Int) -> Unit,
-
     onAddFile: () -> Unit,
     onScreenCapture: () -> Unit,
     onDeleteSource: (Int) -> Unit,
-    onDeleteResult: (Int) -> Unit,
 
     onTransformChange: (Float, Offset) -> Unit,
     onHoverChange: (IntOffset?, Color) -> Unit,
     onColorPick: (String) -> Unit,
     onCropConfirm: (Rect) -> Unit,
+    onCharRectClick: (Rect) -> Unit,
 
     onScaleChange: (Float) -> Unit,
     onDefaultBiasChange: (String) -> Unit,
@@ -66,49 +57,83 @@ fun ImageProcessingWorkbench(
     onRuleRemove: (Long) -> Unit,
     onClearRules: () -> Unit,
 
-    // 这些在流水线模式下可能不再直接操作开关，但保留回调
     onAutoSegment: () -> Unit,
     onClearSegments: () -> Unit,
 
     onToggleGridMode: (Boolean) -> Unit,
     onGridParamChange: (Int, Int, Int, Int, Int, Int, Int, Int) -> Unit,
-    onGridExtract: () -> Unit
+    onGridExtract: () -> Unit,
+
+    // --- 新增: 流水线参数 ---
+    processChain: List<WorkImage>,
+    selectedChainIndex: Int,
+    onSelectChainItem: (Int) -> Unit,
+    onDeleteChainItem: (Int) -> Unit,
+
+    // --- 新增: 模拟处理按钮 ---
+    onAddDenoise: () -> Unit,
+    onAddSkeleton: () -> Unit
 ) {
     Row(modifier = Modifier.fillMaxSize()) {
+        // 1. 左侧面板 (工程资源)
         LeftPanel(
             modifier = Modifier.width(260.dp),
             sourceImages = sourceImages,
-            resultImages = resultImages,
             selectedSourceIndex = selectedSourceIndex,
-            selectedResultIndex = selectedResultIndex,
             activeSource = activeSource,
             onSelectSource = onSelectSource,
-            onSelectResult = onSelectResult,
             onAddFile = onAddFile,
             onScreenCapture = onScreenCapture,
-            onDeleteSource = onDeleteSource,
-            onDeleteResult = onDeleteResult
+            onDeleteSource = onDeleteSource
         )
 
-        Workspace(
-            modifier = Modifier.weight(1f),
-            workImage = currentImage,
-            binaryBitmap = binaryBitmap, // 传递二值化图层
-            showBinaryPreview = binaryBitmap != null, // 只要有 bitmap 就显示
-            scale = mainScale,
-            offset = mainOffset,
-            onTransformChange = onTransformChange,
-            onHoverChange = onHoverChange,
-            onColorPick = onColorPick,
-            onCropConfirm = onCropConfirm,
-            colorRules = colorRules,
-            charRects = charRects,
-            onCharRectClick = {}
-        )
+        // 2. 中间区域 (画布 + 流水线)
+        Column(modifier = Modifier.weight(1f)) {
+            // 2.1 顶部工具栏 (模拟功能入口)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(4.dp)
+                    .height(40.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(onClick = onAddDenoise) { Text("清除杂点") }
+                Button(onClick = onAddSkeleton) { Text("细化抽骨") }
+            }
 
+            // 2.2 画布
+            Workspace(
+                modifier = Modifier.weight(1f),
+                workImage = currentImage,
+                // 如果当前正在查看的就是二值化结果图(isBinary=true)，则不再叠加二值化预览层(showBinaryPreview=false)
+                // 只有在查看非二值化图（原图或中间步骤）且有规则时，才叠加预览
+                showBinaryPreview = (currentImage?.isBinary == false) && (binaryBitmap != null),
+                binaryBitmap = binaryBitmap,
+                scale = mainScale,
+                offset = mainOffset,
+                onTransformChange = onTransformChange,
+                onHoverChange = onHoverChange,
+                onColorPick = onColorPick,
+                onCropConfirm = onCropConfirm,
+                colorRules = colorRules,
+                charRects = charRects,
+                onCharRectClick = onCharRectClick
+            )
+
+            // 2.3 底部流水线
+            BottomPanel(
+                modifier = Modifier.height(140.dp),
+                processChain = processChain,
+                selectedIndex = selectedChainIndex,
+                onSelect = onSelectChainItem,
+                onDelete = onDeleteChainItem
+            )
+        }
+
+        // 3. 右侧面板 (参数)
         RightPanel(
             modifier = Modifier.width(320.dp),
-            rawImage = currentImage?.bufferedImage, // 用于取色逻辑
+            rawImage = currentImage?.bufferedImage,
             hoverPixelPos = hoverPixelPos,
             hoverColor = hoverColor,
             mainScale = mainScale,
@@ -120,18 +145,13 @@ fun ImageProcessingWorkbench(
             onRuleToggle = onRuleToggle,
             onRuleRemove = onRuleRemove,
             onClearRules = onClearRules,
-
-            // 移除了显式的 showBinaryPreview 开关控制，由 App 逻辑自动决定
             onAutoSegment = onAutoSegment,
             onClearSegments = onClearSegments,
-
             isGridMode = isGridMode,
             onToggleGridMode = onToggleGridMode,
             gridParams = gridParams,
             onGridParamChange = onGridParamChange,
             onGridExtract = onGridExtract,
-
-            // 传递 Scope 控制给右侧面板
             currentScope = currentScope,
             onToggleScope = onToggleScope
         )
