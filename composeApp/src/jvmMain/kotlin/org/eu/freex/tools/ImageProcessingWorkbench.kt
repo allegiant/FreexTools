@@ -32,7 +32,6 @@ fun ImageProcessingWorkbench(
     mainOffset: Offset,
     hoverPixelPos: IntOffset?,
     hoverColor: Color,
-    isCropMode: Boolean,
     colorRules: List<ColorRule>,
     defaultBias: String,
     showBinaryPreview: Boolean,
@@ -54,7 +53,6 @@ fun ImageProcessingWorkbench(
     onHoverChange: (IntOffset?, Color) -> Unit,
     onColorPick: (String) -> Unit,
     onCropConfirm: (Rect) -> Unit,
-    onToggleCropMode: () -> Unit,
 
     onScaleChange: (Float) -> Unit,
     onDefaultBiasChange: (String) -> Unit,
@@ -90,7 +88,6 @@ fun ImageProcessingWorkbench(
             workImage = currentImage,
             binaryBitmap = binaryBitmap, // 传递二值化图层
             showBinaryPreview = showBinaryPreview,
-            isCropMode = isCropMode,
             scale = mainScale,
             offset = mainOffset,
             onTransformChange = onTransformChange,
@@ -124,8 +121,6 @@ fun ImageProcessingWorkbench(
             onToggleGridMode = onToggleGridMode,
             gridParams = gridParams,
             onGridParamChange = onGridParamChange,
-            isCropMode = isCropMode,
-            onToggleCropMode = onToggleCropMode,
             onGridExtract = onGridExtract
         )
     }

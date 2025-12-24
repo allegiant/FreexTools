@@ -7,7 +7,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -47,9 +46,6 @@ fun RightPanel(
     onToggleGridMode: (Boolean) -> Unit,
     gridParams: GridParams,
     onGridParamChange: (Int, Int, Int, Int, Int, Int, Int, Int) -> Unit,
-    // --- 新增参数 ---
-    isCropMode: Boolean,
-    onToggleCropMode: () -> Unit,
     onGridExtract: () -> Unit
 ) {
     Column(
@@ -83,20 +79,19 @@ fun RightPanel(
         Spacer(Modifier.height(12.dp))
 
         // 2. 画布工具 (新增)
-        Text("画布工具", style = MaterialTheme.typography.caption, color = Color.Gray)
+        Text("画布操作指南", style = MaterialTheme.typography.caption, color = Color.Gray)
         Spacer(Modifier.height(4.dp))
-        Button(
-            onClick = onToggleCropMode,
-            modifier = Modifier.fillMaxWidth().height(36.dp),
-            colors = ButtonDefaults.buttonColors(
-                backgroundColor = if (isCropMode) Color(0xFFFF5722) else Color.White,
-                contentColor = if (isCropMode) Color.White else Color.Black
-            ),
-            contentPadding = PaddingValues(0.dp)
+        Card(
+            backgroundColor = Color.White,
+            elevation = 0.dp,
+            border = BorderStroke(1.dp, Color.LightGray)
         ) {
-            Icon(Icons.Default.Crop, contentDescription = null, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(8.dp))
-            Text(if (isCropMode) "正在裁剪 (ESC退出)" else "进入裁剪模式", fontSize = 12.sp)
+            Column(Modifier.padding(8.dp)) {
+                Text("• 左键拖拽：框选区域 (裁剪)", fontSize = 12.sp, color = Color.DarkGray)
+                Text("• 右键拖拽：平移画布", fontSize = 12.sp, color = Color.DarkGray)
+                Text("• 双击框内：确认裁剪", fontSize = 12.sp, color = Color.DarkGray)
+                Text("• 滚轮滚动：缩放", fontSize = 12.sp, color = Color.DarkGray)
+            }
         }
 
         Divider(Modifier.padding(vertical = 12.dp))

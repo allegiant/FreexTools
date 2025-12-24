@@ -59,7 +59,6 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
     var mainOffset by remember { mutableStateOf(Offset.Zero) }
     var hoverPixelPos by remember { mutableStateOf<IntOffset?>(null) }
     var hoverColor by remember { mutableStateOf(Color.Transparent) }
-    var isCropMode by remember { mutableStateOf(false) }
 
     val colorRules = remember { mutableStateListOf<ColorRule>() }
     var defaultBias by remember { mutableStateOf("101010") }
@@ -88,7 +87,7 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
         // 添加新图后，自动切换到源列表并选中新图
         selectedSourceIndex = sourceImages.lastIndex
         activeSource = ActiveSource.SOURCE
-        mainScale = 1f; mainOffset = Offset.Zero; isCropMode = false
+        mainScale = 1f; mainOffset = Offset.Zero
     }
 
     fun addResultImage(bufferedImage: BufferedImage, name: String) {
@@ -197,7 +196,6 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
                         mainOffset = mainOffset,
                         hoverPixelPos = hoverPixelPos,
                         hoverColor = hoverColor,
-                        isCropMode = isCropMode,
                         colorRules = colorRules,
                         defaultBias = defaultBias,
                         showBinaryPreview = showBinaryPreview,
@@ -248,7 +246,6 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
                                 addResultImage(newImg, "Crop_${resultImages.size}")
                             }
                         },
-                        onToggleCropMode = { isCropMode = !isCropMode },
                         onScaleChange = { mainScale = it },
                         onDefaultBiasChange = { defaultBias = it },
                         onRuleUpdate = { id, bias -> colorRules.find { it.id == id }?.let { colorRules[colorRules.indexOf(it)] = it.copy(biasHex = bias) } },
