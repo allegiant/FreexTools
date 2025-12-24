@@ -1,3 +1,4 @@
+// composeApp/src/jvmMain/kotlin/org/eu/freex/tools/ImageProcessingWorkbench.kt
 package org.eu.freex.tools
 
 import androidx.compose.foundation.layout.Row
@@ -11,6 +12,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import org.eu.freex.tools.model.ActiveSource
 import org.eu.freex.tools.model.ColorRule
 import org.eu.freex.tools.model.GridParams
 import org.eu.freex.tools.model.WorkImage
@@ -18,9 +20,14 @@ import org.eu.freex.tools.model.WorkImage
 @Composable
 fun ImageProcessingWorkbench(
     sourceImages: List<WorkImage>,
-    currentImageIndex: Int,
     resultImages: List<WorkImage>,
     currentImage: WorkImage?,
+
+    // 状态
+    selectedSourceIndex: Int,
+    selectedResultIndex: Int,
+    activeSource: ActiveSource,
+
     mainScale: Float,
     mainOffset: Offset,
     hoverPixelPos: IntOffset?,
@@ -29,12 +36,15 @@ fun ImageProcessingWorkbench(
     colorRules: List<ColorRule>,
     defaultBias: String,
     showBinaryPreview: Boolean,
+    binaryBitmap: ImageBitmap?,
     isGridMode: Boolean,
     gridParams: GridParams,
     charRects: List<Rect>,
 
-    // Callbacks
-    onSelectImage: (Int) -> Unit,
+    // 回调
+    onSelectSource: (Int) -> Unit,
+    onSelectResult: (Int) -> Unit, // 新增
+
     onAddFile: () -> Unit,
     onScreenCapture: () -> Unit,
     onDeleteSource: (Int) -> Unit,
@@ -57,27 +67,29 @@ fun ImageProcessingWorkbench(
     onClearSegments: () -> Unit,
     onToggleGridMode: (Boolean) -> Unit,
     onGridParamChange: (Int, Int, Int, Int, Int, Int, Int, Int) -> Unit,
-    onGridExtract: () -> Unit,
-    binaryBitmap: ImageBitmap?,
+    onGridExtract: () -> Unit
 ) {
     Row(modifier = Modifier.fillMaxSize()) {
-        // 1. 左侧资产 (固定宽 260dp)
         LeftPanel(
             modifier = Modifier.width(260.dp),
             sourceImages = sourceImages,
-            selectedIndex = currentImageIndex,
-            onSelect = onSelectImage,
+            resultImages = resultImages,
+            selectedSourceIndex = selectedSourceIndex,
+            selectedResultIndex = selectedResultIndex,
+            activeSource = activeSource,
+            onSelectSource = onSelectSource,
+            onSelectResult = onSelectResult,
             onAddFile = onAddFile,
             onScreenCapture = onScreenCapture,
             onDeleteSource = onDeleteSource,
-            resultImages = resultImages,
             onDeleteResult = onDeleteResult
         )
 
-        // 2. 中间画布 (自适应)
         Workspace(
             modifier = Modifier.weight(1f),
             workImage = currentImage,
+            binaryBitmap = binaryBitmap, // 传递二值化图层
+            showBinaryPreview = showBinaryPreview,
             isCropMode = isCropMode,
             scale = mainScale,
             offset = mainOffset,
@@ -87,15 +99,12 @@ fun ImageProcessingWorkbench(
             onCropConfirm = onCropConfirm,
             colorRules = colorRules,
             charRects = charRects,
-            onCharRectClick = {},
-            binaryBitmap = binaryBitmap,
-            showBinaryPreview = showBinaryPreview,
+            onCharRectClick = {}
         )
 
-        // 3. 右侧控制 (固定宽 320dp)
         RightPanel(
             modifier = Modifier.width(320.dp),
-            rawImage = currentImage?.bufferedImage,
+            rawImage = currentImage?.bufferedImage, // 这里只要有图片对象就行，用于取色逻辑
             hoverPixelPos = hoverPixelPos,
             hoverColor = hoverColor,
             mainScale = mainScale,

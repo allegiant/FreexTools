@@ -23,40 +23,44 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.eu.freex.tools.model.ActiveSource
 import org.eu.freex.tools.model.WorkImage
 
 @Composable
 fun LeftPanel(
     modifier: Modifier,
     sourceImages: List<WorkImage>,
-    selectedIndex: Int,
-    onSelect: (Int) -> Unit,
-    onDeleteSource: (Int) -> Unit,
-    onAddFile: () -> Unit,
-    onScreenCapture: () -> Unit,
     resultImages: List<WorkImage>,
-    onDeleteResult: (Int) -> Unit
+
+    // 选中状态
+    selectedSourceIndex: Int,
+    selectedResultIndex: Int,
+    activeSource: ActiveSource,
+
+    onSelectSource: (Int) -> Unit,
+    onSelectResult: (Int) -> Unit, // 新增：结果选择回调
+
+    onDeleteSource: (Int) -> Unit,
+    onDeleteResult: (Int) -> Unit,
+    onAddFile: () -> Unit,
+    onScreenCapture: () -> Unit
 ) {
     Column(
         modifier = modifier
             .fillMaxHeight()
-            .background(Color(0xFF252526)) // 深色背景
+            .background(Color(0xFF252526))
+            // 【修正】使用 drawBehind 绘制右侧边框
             .drawBehind {
-                val strokeWidth = 1.dp.toPx() // 边框宽度
-                val borderColor = Color(0xFF3E3E42) // 边框颜色
-
-                // 在画布的最右侧画一条垂直线
                 drawLine(
-                    color = borderColor,
+                    color = Color(0xFF3E3E42),
                     start = Offset(size.width, 0f),
                     end = Offset(size.width, size.height),
-                    strokeWidth = strokeWidth
+                    strokeWidth = 1.dp.toPx()
                 )
             }
     ) {
-        // --- 区域 1：工程资源 (源图片) ---
+        // --- 上半部分：源文件 ---
         Column(modifier = Modifier.weight(1f)) {
-            // 标题与添加按钮
             Row(
                 modifier = Modifier.fillMaxWidth().padding(8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -68,25 +72,22 @@ fun LeftPanel(
                 }
             }
 
-            // 截图按钮
             Button(
                 onClick = onScreenCapture,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp).height(30.dp),
                 contentPadding = PaddingValues(0.dp),
                 colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF007ACC), contentColor = Color.White)
-            ) {
-                Text("截图导入", fontSize = 12.sp)
-            }
+            ) { Text("截图导入", fontSize = 12.sp) }
 
             Spacer(Modifier.height(8.dp))
 
-            // 源图片列表
             LazyColumn(
                 contentPadding = PaddingValues(horizontal = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 itemsIndexed(sourceImages) { index, item ->
-                    val isSelected = index == selectedIndex
+                    // 判断是否高亮：当前激活的是源列表 && 索引匹配
+                    val isSelected = (activeSource == ActiveSource.SOURCE && index == selectedSourceIndex)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -95,24 +96,19 @@ fun LeftPanel(
                                 if (isSelected) Color(0xFF37373D) else Color.Transparent,
                                 RoundedCornerShape(4.dp)
                             )
-                            .clickable { onSelect(index) }
+                            .clickable { onSelectSource(index) }
                             .padding(horizontal = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Image(
-                            bitmap = item.bitmap,
-                            contentDescription = null,
+                            bitmap = item.bitmap, contentDescription = null,
                             modifier = Modifier.size(32.dp).background(Color.Black),
                             contentScale = ContentScale.Fit
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = item.name,
-                            color = Color.LightGray,
-                            fontSize = 12.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
+                            text = item.name, color = Color.LightGray, fontSize = 12.sp,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
                         )
                         IconButton(onClick = { onDeleteSource(index) }, modifier = Modifier.size(16.dp)) {
                             Icon(Icons.Default.Delete, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(14.dp))
@@ -124,7 +120,7 @@ fun LeftPanel(
 
         Divider(color = Color(0xFF3E3E42), thickness = 2.dp)
 
-        // --- 区域 2：结果暂存区 ---
+        // --- 下半部分：结果暂存区 ---
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 "结果暂存 (${resultImages.size})",
@@ -141,11 +137,17 @@ fun LeftPanel(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 itemsIndexed(resultImages) { index, item ->
+                    // 判断是否高亮：当前激活的是结果列表 && 索引匹配
+                    val isSelected = (activeSource == ActiveSource.RESULT && index == selectedResultIndex)
+                    val borderColor = if (isSelected) Color(0xFFFF5722) else Color(0xFF555555)
+
                     Box(
                         modifier = Modifier
                             .aspectRatio(1f)
                             .background(Color(0xFF333333), RoundedCornerShape(2.dp))
-                            .border(1.dp, Color(0xFF555555), RoundedCornerShape(2.dp))
+                            .border(if (isSelected) 2.dp else 1.dp, borderColor, RoundedCornerShape(2.dp))
+                            // 【核心修复】添加点击事件
+                            .clickable { onSelectResult(index) }
                     ) {
                         Image(
                             bitmap = item.bitmap,
@@ -153,7 +155,6 @@ fun LeftPanel(
                             contentScale = ContentScale.Fit,
                             modifier = Modifier.fillMaxSize().padding(2.dp)
                         )
-                        // 删除悬浮按钮
                         Box(
                             modifier = Modifier
                                 .align(Alignment.TopEnd)

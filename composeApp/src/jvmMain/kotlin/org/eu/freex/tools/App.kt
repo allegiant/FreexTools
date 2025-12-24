@@ -1,4 +1,3 @@
-// 文件路径: composeApp/src/jvmMain/kotlin/org/eu/freex/tools/App.kt
 package org.eu.freex.tools
 
 import androidx.compose.foundation.layout.*
@@ -10,7 +9,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.unit.IntOffset
 import kotlinx.coroutines.Dispatchers
@@ -18,6 +16,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.eu.freex.tools.dialogs.ScreenCropperDialog
+import org.eu.freex.tools.model.ActiveSource
 import org.eu.freex.tools.model.ColorRule
 import org.eu.freex.tools.model.GridParams
 import org.eu.freex.tools.model.WorkImage
@@ -38,14 +37,24 @@ import javax.imageio.ImageIO
 fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
     var currentModule by remember { mutableStateOf(AppModule.IMAGE_PROCESSING) }
 
-    // --- 数据状态 ---
+    // --- 数据源状态 ---
     val sourceImages = remember { mutableStateListOf<WorkImage>() }
-    var currentIndex by remember { mutableStateOf(-1) }
     val resultImages = remember { mutableStateListOf<WorkImage>() }
 
-    val currentImage = if (currentIndex in sourceImages.indices) sourceImages[currentIndex] else null
+    // --- 选中状态管理 ---
+    // 分别记录两个列表的选中索引
+    var selectedSourceIndex by remember { mutableStateOf(-1) }
+    var selectedResultIndex by remember { mutableStateOf(-1) }
+    // 记录当前到底是在看哪个列表
+    var activeSource by remember { mutableStateOf(ActiveSource.SOURCE) }
 
-    // --- UI/工具状态 ---
+    // 计算当前应该显示的图片
+    val currentImage = when (activeSource) {
+        ActiveSource.SOURCE -> if (selectedSourceIndex in sourceImages.indices) sourceImages[selectedSourceIndex] else null
+        ActiveSource.RESULT -> if (selectedResultIndex in resultImages.indices) resultImages[selectedResultIndex] else null
+    }
+
+    // --- 画布与工具状态 ---
     var mainScale by remember { mutableStateOf(1f) }
     var mainOffset by remember { mutableStateOf(Offset.Zero) }
     var hoverPixelPos by remember { mutableStateOf<IntOffset?>(null) }
@@ -58,6 +67,7 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
     var showScreenCropper by remember { mutableStateOf(false) }
     var fullScreenCapture by remember { mutableStateOf<BufferedImage?>(null) }
     var charRects by remember { mutableStateOf<List<Rect>>(emptyList()) }
+    var binaryBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
 
     // 网格参数
     var isGridMode by remember { mutableStateOf(false) }
@@ -69,22 +79,51 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
     var gridRowGap by remember { mutableStateOf(0) }
     var gridColCount by remember { mutableStateOf(1) }
     var gridRowCount by remember { mutableStateOf(1) }
-    var binaryBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
 
     val scope = rememberCoroutineScope()
 
-    // --- 帮助函数 ---
+    // --- 辅助函数 ---
     fun addSourceImage(bufferedImage: BufferedImage, name: String) {
         sourceImages.add(WorkImage(bufferedImage.toComposeImageBitmap(), bufferedImage, name))
-        currentIndex = sourceImages.lastIndex
+        // 添加新图后，自动切换到源列表并选中新图
+        selectedSourceIndex = sourceImages.lastIndex
+        activeSource = ActiveSource.SOURCE
         mainScale = 1f; mainOffset = Offset.Zero; isCropMode = false
     }
 
     fun addResultImage(bufferedImage: BufferedImage, name: String) {
         resultImages.add(WorkImage(bufferedImage.toComposeImageBitmap(), bufferedImage, name))
+        // (可选) 生成结果后是否自动跳转查看结果？通常保持在原图以便继续操作，这里不自动跳转
     }
 
-    // 监听网格参数变化自动更新框
+    // 监听规则变化，后台计算二值化图（用于 Workspace 叠加显示）
+    LaunchedEffect(currentImage, colorRules.toList(), colorRules.size, showBinaryPreview) {
+        if (!showBinaryPreview || currentImage == null) {
+            binaryBitmap = null
+            return@LaunchedEffect
+        }
+        withContext(Dispatchers.Default) {
+            val rawImage = currentImage.bufferedImage
+            val activeRules = colorRules.filter { it.isEnabled }
+            if (activeRules.isNotEmpty()) {
+                val w = rawImage.width
+                val h = rawImage.height
+                val resultImg = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
+                for (y in 0 until h) {
+                    for (x in 0 until w) {
+                        val rgb = rawImage.getRGB(x, y)
+                        val isMatch = ColorUtils.isMatchAny(rgb, activeRules)
+                        resultImg.setRGB(x, y, if (isMatch) 0xFFFFFFFF.toInt() else 0xFF000000.toInt())
+                    }
+                }
+                binaryBitmap = resultImg.toComposeImageBitmap()
+            } else {
+                binaryBitmap = null
+            }
+        }
+    }
+
+    // 监听网格变化
     LaunchedEffect(isGridMode, gridX, gridY, gridW, gridH, gridColGap, gridRowGap, gridColCount, gridRowCount) {
         if (isGridMode) {
             charRects = ImageUtils.generateGridRects(gridX, gridY, gridW, gridH, gridColGap, gridRowGap, gridColCount, gridRowCount)
@@ -100,7 +139,7 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
         }
     }
 
-    // 拖拽文件逻辑
+    // 拖拽文件支持
     if (window != null) {
         DisposableEffect(window) {
             val dropTarget = object : DropTarget() {
@@ -129,7 +168,7 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
         }
     }
 
-    // 截图弹窗逻辑
+    // 截图弹窗
     if (showScreenCropper && fullScreenCapture != null) {
         ScreenCropperDialog(
             fullScreenImage = fullScreenCapture!!,
@@ -138,57 +177,22 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
         )
     }
 
-    // 只有当开启预览时才计算，节省性能？
-    // 或者一直计算以便切换时无延迟。建议一直计算，因为规则变动频率不高。
-    LaunchedEffect(currentImage, colorRules.toList(), colorRules.size) {
-        if (currentImage == null) {
-            binaryBitmap = null
-            return@LaunchedEffect
-        }
-
-        // 只有当开启预览时才计算，节省性能？
-        // 或者一直计算以便切换时无延迟。建议一直计算，因为规则变动频率不高。
-        withContext(Dispatchers.Default) {
-            val rawImage = currentImage.bufferedImage
-            val activeRules = colorRules.filter { it.isEnabled }
-
-            if (activeRules.isEmpty()) {
-                binaryBitmap = null
-            } else {
-                val w = rawImage.width
-                val h = rawImage.height
-                val resultImg = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
-
-                // 这里可以使用 ImageUtils 里的高性能算法优化，暂时用简单循环
-                for (y in 0 until h) {
-                    for (x in 0 until w) {
-                        val rgb = rawImage.getRGB(x, y)
-                        val isMatch = ColorUtils.isMatchAny(rgb, activeRules)
-                        // 匹配显示保留原色或白色？通常二值化是 黑白。
-                        // 这里我们做成：匹配的部分显示高亮色(如白色)，不匹配的显示黑色或透明
-                        resultImg.setRGB(x, y, if (isMatch) 0xFFFFFFFF.toInt() else 0xFF000000.toInt())
-                    }
-                }
-                binaryBitmap = resultImg.toComposeImageBitmap()
-            }
-        }
-    }
-
-    // --- 主界面布局 ---
     Column(Modifier.fillMaxSize()) {
-        TopBar(
-            currentModule = currentModule,
-            onModuleChange = { currentModule = it }
-        )
+        TopBar(currentModule = currentModule, onModuleChange = { currentModule = it })
 
         Box(Modifier.weight(1f)) {
             when (currentModule) {
                 AppModule.IMAGE_PROCESSING -> {
                     ImageProcessingWorkbench(
                         sourceImages = sourceImages,
-                        currentImageIndex = currentIndex,
                         resultImages = resultImages,
                         currentImage = currentImage,
+
+                        // 传递选中状态
+                        selectedSourceIndex = selectedSourceIndex,
+                        selectedResultIndex = selectedResultIndex,
+                        activeSource = activeSource,
+
                         mainScale = mainScale,
                         mainOffset = mainOffset,
                         hoverPixelPos = hoverPixelPos,
@@ -197,15 +201,28 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
                         colorRules = colorRules,
                         defaultBias = defaultBias,
                         showBinaryPreview = showBinaryPreview,
+                        binaryBitmap = binaryBitmap,
                         isGridMode = isGridMode,
                         gridParams = GridParams(gridX, gridY, gridW, gridH, gridColGap, gridRowGap, gridColCount, gridRowCount),
                         charRects = charRects,
 
-                        onSelectImage = { currentIndex = it },
+                        // --- 核心修改：处理两种图片的点击 ---
+                        onSelectSource = { idx ->
+                            selectedSourceIndex = idx
+                            activeSource = ActiveSource.SOURCE
+                            // 切换图片时重置缩放和偏移，或者保留？通常重置更符合直觉
+                            // mainScale = 1f; mainOffset = Offset.Zero
+                        },
+                        onSelectResult = { idx ->
+                            selectedResultIndex = idx
+                            activeSource = ActiveSource.RESULT
+                            // mainScale = 1f; mainOffset = Offset.Zero
+                        },
+
                         onAddFile = { ImageUtils.pickFile()?.let { loadFile(it) } },
                         onScreenCapture = {
                             scope.launch(Dispatchers.IO) {
-                                delay(300) // 等待窗口最小化动画
+                                delay(300)
                                 val capture = ImageUtils.captureFullScreen()
                                 withContext(Dispatchers.Main) { fullScreenCapture = capture; showScreenCropper = true }
                             }
@@ -213,7 +230,7 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
                         onDeleteSource = { idx ->
                             if (idx in sourceImages.indices) {
                                 sourceImages.removeAt(idx)
-                                if (currentIndex >= sourceImages.size) currentIndex = sourceImages.lastIndex
+                                if (selectedSourceIndex >= sourceImages.size) selectedSourceIndex = sourceImages.lastIndex
                             }
                         },
                         onDeleteResult = { idx -> if (idx in resultImages.indices) resultImages.removeAt(idx) },
@@ -248,7 +265,6 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
                                         withContext(Dispatchers.Main) {
                                             if (rawRects.isNotEmpty()) {
                                                 charRects = rawRects
-                                                // 自动填充网格参数逻辑可在此处优化
                                                 val first = rawRects.minByOrNull { it.left } ?: rawRects[0]
                                                 gridX = first.left.toInt()
                                                 gridY = first.top.toInt()
@@ -272,8 +288,7 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
                                     addResultImage(cut, "Grid_${resultImages.size}")
                                 }
                             }
-                        },
-                        binaryBitmap = binaryBitmap,
+                        }
                     )
                 }
                 AppModule.FONT_MANAGER -> {
