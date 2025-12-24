@@ -1,14 +1,18 @@
+// 文件路径: composeApp/src/jvmMain/kotlin/org/eu/freex/tools/App.kt
 package org.eu.freex.tools
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -17,6 +21,7 @@ import org.eu.freex.tools.dialogs.ScreenCropperDialog
 import org.eu.freex.tools.model.ColorRule
 import org.eu.freex.tools.model.GridParams
 import org.eu.freex.tools.model.WorkImage
+import org.eu.freex.tools.utils.ColorUtils
 import org.eu.freex.tools.utils.ImageUtils
 import java.awt.Component
 import java.awt.Container
@@ -31,10 +36,16 @@ import javax.imageio.ImageIO
 
 @Composable
 fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
-    val imageList = remember { mutableStateListOf<WorkImage>() }
-    var currentIndex by remember { mutableStateOf(-1) }
-    val currentImage = if (currentIndex in imageList.indices) imageList[currentIndex] else null
+    var currentModule by remember { mutableStateOf(AppModule.IMAGE_PROCESSING) }
 
+    // --- 数据状态 ---
+    val sourceImages = remember { mutableStateListOf<WorkImage>() }
+    var currentIndex by remember { mutableStateOf(-1) }
+    val resultImages = remember { mutableStateListOf<WorkImage>() }
+
+    val currentImage = if (currentIndex in sourceImages.indices) sourceImages[currentIndex] else null
+
+    // --- UI/工具状态 ---
     var mainScale by remember { mutableStateOf(1f) }
     var mainOffset by remember { mutableStateOf(Offset.Zero) }
     var hoverPixelPos by remember { mutableStateOf<IntOffset?>(null) }
@@ -46,11 +57,10 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
     var showBinaryPreview by remember { mutableStateOf(false) }
     var showScreenCropper by remember { mutableStateOf(false) }
     var fullScreenCapture by remember { mutableStateOf<BufferedImage?>(null) }
-    // 存储自动切割出的字符框列表
     var charRects by remember { mutableStateOf<List<Rect>>(emptyList()) }
 
-    // --- 新增：网格切割参数状态 ---
-    var isGridMode by remember { mutableStateOf(false) } // 模式切换：自动 vs 网格
+    // 网格参数
+    var isGridMode by remember { mutableStateOf(false) }
     var gridX by remember { mutableStateOf(0) }
     var gridY by remember { mutableStateOf(0) }
     var gridW by remember { mutableStateOf(15) }
@@ -59,22 +69,25 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
     var gridRowGap by remember { mutableStateOf(0) }
     var gridColCount by remember { mutableStateOf(1) }
     var gridRowCount by remember { mutableStateOf(1) }
-    // ----------------------------
+    var binaryBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
 
     val scope = rememberCoroutineScope()
 
-    fun addImage(bufferedImage: BufferedImage, name: String) {
-        imageList.add(WorkImage(bufferedImage.toComposeImageBitmap(), bufferedImage, name))
-        currentIndex = imageList.lastIndex
-        mainScale = 1f; mainOffset = Offset.Zero
-        isCropMode = false
+    // --- 帮助函数 ---
+    fun addSourceImage(bufferedImage: BufferedImage, name: String) {
+        sourceImages.add(WorkImage(bufferedImage.toComposeImageBitmap(), bufferedImage, name))
+        currentIndex = sourceImages.lastIndex
+        mainScale = 1f; mainOffset = Offset.Zero; isCropMode = false
     }
+
+    fun addResultImage(bufferedImage: BufferedImage, name: String) {
+        resultImages.add(WorkImage(bufferedImage.toComposeImageBitmap(), bufferedImage, name))
+    }
+
+    // 监听网格参数变化自动更新框
     LaunchedEffect(isGridMode, gridX, gridY, gridW, gridH, gridColGap, gridRowGap, gridColCount, gridRowCount) {
         if (isGridMode) {
-            // 只要参数一变，立即重新计算框框
-            charRects = ImageUtils.generateGridRects(
-                gridX, gridY, gridW, gridH, gridColGap, gridRowGap, gridColCount, gridRowCount
-            )
+            charRects = ImageUtils.generateGridRects(gridX, gridY, gridW, gridH, gridColGap, gridRowGap, gridColCount, gridRowCount)
         }
     }
 
@@ -82,12 +95,12 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
         scope.launch(Dispatchers.IO) {
             try {
                 val img = ImageIO.read(file)
-                if (img != null) withContext(Dispatchers.Main) { addImage(img, file.name) }
+                if (img != null) withContext(Dispatchers.Main) { addSourceImage(img, file.name) }
             } catch (e: Exception) { e.printStackTrace() }
         }
     }
 
-    // 拖拽挂载 logic
+    // 拖拽文件逻辑
     if (window != null) {
         DisposableEffect(window) {
             val dropTarget = object : DropTarget() {
@@ -104,187 +117,171 @@ fun App(window: androidx.compose.ui.awt.ComposeWindow?) {
                             }
                         }
                         evt.dropComplete(true)
-                    } catch (e: Exception) {
-                        e.printStackTrace(); evt.dropComplete(false)
-                    }
+                    } catch (e: Exception) { e.printStackTrace(); evt.dropComplete(false) }
                 }
             }
-            // 递归挂载
             fun attachToAll(component: Component) {
                 component.dropTarget = dropTarget
-                if (component is Container) {
-                    for (child in component.components) attachToAll(child)
-                }
+                if (component is Container) for (child in component.components) attachToAll(child)
             }
             attachToAll(window)
             onDispose { window.dropTarget = null }
         }
     }
 
+    // 截图弹窗逻辑
     if (showScreenCropper && fullScreenCapture != null) {
         ScreenCropperDialog(
             fullScreenImage = fullScreenCapture!!,
             onDismiss = { showScreenCropper = false },
-            onCropConfirm = { cropped -> showScreenCropper = false; addImage(cropped, "截图 ${imageList.size + 1}") }
+            onCropConfirm = { cropped -> showScreenCropper = false; addSourceImage(cropped, "截图 ${sourceImages.size + 1}") }
         )
     }
 
-    Column(Modifier.fillMaxSize()) {
-        TopBar(
-            onLoadFile = { ImageUtils.pickFile()?.let { loadFile(it) } },
-            onScreenCapture = {
-                scope.launch(Dispatchers.IO) {
-                    delay(300)
-                    val capture = ImageUtils.captureFullScreen()
-                    withContext(Dispatchers.Main) { fullScreenCapture = capture; showScreenCropper = true }
-                }
-            },
-            isCropMode = isCropMode,
-            onToggleCropMode = { isCropMode = !isCropMode }
-        )
-
-        Row(Modifier.weight(1f).fillMaxWidth()) {
-            Workspace(
-                modifier = Modifier.weight(3f),
-                workImage = currentImage,
-                isCropMode = isCropMode,
-                scale = mainScale,
-                offset = mainOffset,
-                onTransformChange = { s, o -> mainScale = s; mainOffset = o },
-                onHoverChange = { pos, col -> hoverPixelPos = pos; hoverColor = col },
-                onColorPick = { hex ->
-                    if (colorRules.size < 10 && colorRules.none { it.targetHex == hex }) {
-                        colorRules.add(ColorRule(targetHex = hex, biasHex = defaultBias))
-                    }
-                },
-                onCropConfirm = { cropRect ->
-                    currentImage?.let {
-                        val newImg = ImageUtils.cropImage(it.bufferedImage, cropRect)
-                        addImage(newImg, "裁剪 ${imageList.size + 1}")
-                    }
-                },
-                colorRules = colorRules,
-                // 传进去用于绘制
-                charRects = charRects,
-                // 点击某个框时的回调（可选，暂时留空后续做选中逻辑）
-                onCharRectClick = { rect -> println("Selected: $rect") }
-            )
-
-            RightPanel(
-                modifier = Modifier.width(340.dp),
-                rawImage = currentImage?.bufferedImage,
-                hoverPixelPos = hoverPixelPos,
-                hoverColor = hoverColor,
-                mainScale = mainScale,
-                onScaleChange = { mainScale = it },
-                colorRules = colorRules,
-                defaultBias = defaultBias,
-                onDefaultBiasChange = { defaultBias = it },
-                onRuleUpdate = { id, newBias ->
-                    val index = colorRules.indexOfFirst { it.id == id }
-                    if (index != -1) colorRules[index] = colorRules[index].copy(biasHex = newBias)
-                },
-                // 新增：处理启用状态切换
-                onRuleToggle = { id, enabled ->
-                    val index = colorRules.indexOfFirst { it.id == id }
-                    if (index != -1) colorRules[index] = colorRules[index].copy(isEnabled = enabled)
-                },
-                onRuleRemove = { id -> colorRules.removeIf { it.id == id } },
-                onClearRules = { colorRules.clear() },
-                showBinary = showBinaryPreview,
-                onTogglePreview = { showBinaryPreview = !showBinaryPreview },
-                // 新增回调：执行切割
-                onAutoSegment = {
-                    currentImage?.let { workImg ->
-                        scope.launch(Dispatchers.Default) {
-                            val activeRules = colorRules.filter { it.isEnabled }
-                            if (activeRules.isNotEmpty()) {
-                                // 1. 执行智能识别
-                                val rawRects = ImageUtils.scanConnectedComponents(workImg.bufferedImage, activeRules)
-
-                                // 2. 计算网格参数建议值
-                                if (rawRects.isNotEmpty()) {
-                                    // 简单的排版推算逻辑 (假设是单行横排)
-                                    // 按 x 坐标排序
-                                    val sortedRects = rawRects.sortedBy { it.left }
-
-                                    // 起点：第一个框的左上角
-                                    val first = sortedRects.first()
-                                    val newX = first.left.toInt()
-                                    val newY = first.top.toInt()
-
-                                    // 宽高：取平均值 (更平滑) 或 最大值 (确保包住)
-                                    // 这里使用平均值，微调时更方便
-                                    val avgW = sortedRects.map { it.width }.average().toInt()
-                                    val avgH = sortedRects.map { it.height }.average().toInt()
-
-                                    // 数量
-                                    val count = sortedRects.size
-
-                                    // 间距：计算相邻框的平均间隙
-                                    var totalGap = 0f
-                                    var gapCount = 0
-                                    for (i in 0 until sortedRects.size - 1) {
-                                        val gap = sortedRects[i+1].left - sortedRects[i].right
-                                        // 过滤掉异常大的间距（比如换行了）
-                                        if (gap > 0 && gap < avgW * 2) {
-                                            totalGap += gap
-                                            gapCount++
-                                        }
-                                    }
-                                    val avgGap = if (gapCount > 0) (totalGap / gapCount).toInt() else 0
-
-                                    // 3. 更新 UI 状态
-                                    withContext(Dispatchers.Main) {
-                                        // 更新显示的绿框 (智能模式结果)
-                                        charRects = rawRects
-
-                                        // 【关键】同时将计算出的参数填入网格设置中
-                                        // 这样当你切换到“定距切割”模式时，参数已经准备好了！
-                                        gridX = newX
-                                        gridY = newY
-                                        gridW = avgW
-                                        gridH = avgH
-                                        gridColGap = avgGap
-                                        gridRowGap = 0
-                                        gridColCount = count
-                                        gridRowCount = 1
-
-                                        // 可选：是否自动切到网格模式？
-                                        // 建议保留在智能模式，让用户看一眼识别结果，再手动点切换去微调
-                                        // isGridMode = true
-                                    }
-                                } else {
-                                    withContext(Dispatchers.Main) { charRects = emptyList() }
-                                }
-                            }
-                        }
-                    }
-                },
-                // 传递网格参数给右侧面板
-                isGridMode = isGridMode,
-                onToggleGridMode = { isGridMode = it },
-                gridParams = GridParams(gridX, gridY, gridW, gridH, gridColGap, gridRowGap, gridColCount, gridRowCount),
-                onGridParamChange = { x, y, w, h, cg, rg, cc, rc ->
-                    gridX = x; gridY = y; gridW = w; gridH = h
-                    gridColGap = cg; gridRowGap = rg
-                    gridColCount = cc; gridRowCount = rc
-                },
-                // 新增回调：清除切割
-                onClearSegments = { charRects = emptyList() }
-            )
+    // 只有当开启预览时才计算，节省性能？
+    // 或者一直计算以便切换时无延迟。建议一直计算，因为规则变动频率不高。
+    LaunchedEffect(currentImage, colorRules.toList(), colorRules.size) {
+        if (currentImage == null) {
+            binaryBitmap = null
+            return@LaunchedEffect
         }
 
-        BottomBar(
-            images = imageList,
-            selectedIndex = currentIndex,
-            onSelect = { currentIndex = it },
-            onDelete = { index ->
-                if (index in imageList.indices) {
-                    imageList.removeAt(index)
-                    if (currentIndex >= imageList.size) currentIndex = imageList.lastIndex
+        // 只有当开启预览时才计算，节省性能？
+        // 或者一直计算以便切换时无延迟。建议一直计算，因为规则变动频率不高。
+        withContext(Dispatchers.Default) {
+            val rawImage = currentImage.bufferedImage
+            val activeRules = colorRules.filter { it.isEnabled }
+
+            if (activeRules.isEmpty()) {
+                binaryBitmap = null
+            } else {
+                val w = rawImage.width
+                val h = rawImage.height
+                val resultImg = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
+
+                // 这里可以使用 ImageUtils 里的高性能算法优化，暂时用简单循环
+                for (y in 0 until h) {
+                    for (x in 0 until w) {
+                        val rgb = rawImage.getRGB(x, y)
+                        val isMatch = ColorUtils.isMatchAny(rgb, activeRules)
+                        // 匹配显示保留原色或白色？通常二值化是 黑白。
+                        // 这里我们做成：匹配的部分显示高亮色(如白色)，不匹配的显示黑色或透明
+                        resultImg.setRGB(x, y, if (isMatch) 0xFFFFFFFF.toInt() else 0xFF000000.toInt())
+                    }
+                }
+                binaryBitmap = resultImg.toComposeImageBitmap()
+            }
+        }
+    }
+
+    // --- 主界面布局 ---
+    Column(Modifier.fillMaxSize()) {
+        TopBar(
+            currentModule = currentModule,
+            onModuleChange = { currentModule = it }
+        )
+
+        Box(Modifier.weight(1f)) {
+            when (currentModule) {
+                AppModule.IMAGE_PROCESSING -> {
+                    ImageProcessingWorkbench(
+                        sourceImages = sourceImages,
+                        currentImageIndex = currentIndex,
+                        resultImages = resultImages,
+                        currentImage = currentImage,
+                        mainScale = mainScale,
+                        mainOffset = mainOffset,
+                        hoverPixelPos = hoverPixelPos,
+                        hoverColor = hoverColor,
+                        isCropMode = isCropMode,
+                        colorRules = colorRules,
+                        defaultBias = defaultBias,
+                        showBinaryPreview = showBinaryPreview,
+                        isGridMode = isGridMode,
+                        gridParams = GridParams(gridX, gridY, gridW, gridH, gridColGap, gridRowGap, gridColCount, gridRowCount),
+                        charRects = charRects,
+
+                        onSelectImage = { currentIndex = it },
+                        onAddFile = { ImageUtils.pickFile()?.let { loadFile(it) } },
+                        onScreenCapture = {
+                            scope.launch(Dispatchers.IO) {
+                                delay(300) // 等待窗口最小化动画
+                                val capture = ImageUtils.captureFullScreen()
+                                withContext(Dispatchers.Main) { fullScreenCapture = capture; showScreenCropper = true }
+                            }
+                        },
+                        onDeleteSource = { idx ->
+                            if (idx in sourceImages.indices) {
+                                sourceImages.removeAt(idx)
+                                if (currentIndex >= sourceImages.size) currentIndex = sourceImages.lastIndex
+                            }
+                        },
+                        onDeleteResult = { idx -> if (idx in resultImages.indices) resultImages.removeAt(idx) },
+
+                        onTransformChange = { s, o -> mainScale = s; mainOffset = o },
+                        onHoverChange = { p, c -> hoverPixelPos = p; hoverColor = c },
+                        onColorPick = { hex ->
+                            if (colorRules.size < 10 && colorRules.none { it.targetHex == hex }) {
+                                colorRules.add(ColorRule(targetHex = hex, biasHex = defaultBias))
+                            }
+                        },
+                        onCropConfirm = { rect ->
+                            currentImage?.let {
+                                val newImg = ImageUtils.cropImage(it.bufferedImage, rect)
+                                addResultImage(newImg, "Crop_${resultImages.size}")
+                            }
+                        },
+                        onToggleCropMode = { isCropMode = !isCropMode },
+                        onScaleChange = { mainScale = it },
+                        onDefaultBiasChange = { defaultBias = it },
+                        onRuleUpdate = { id, bias -> colorRules.find { it.id == id }?.let { colorRules[colorRules.indexOf(it)] = it.copy(biasHex = bias) } },
+                        onRuleToggle = { id, enabled -> colorRules.find { it.id == id }?.let { colorRules[colorRules.indexOf(it)] = it.copy(isEnabled = enabled) } },
+                        onRuleRemove = { id -> colorRules.removeIf { it.id == id } },
+                        onClearRules = { colorRules.clear() },
+                        onTogglePreview = { showBinaryPreview = !showBinaryPreview },
+                        onAutoSegment = {
+                            currentImage?.let { workImg ->
+                                scope.launch(Dispatchers.Default) {
+                                    val activeRules = colorRules.filter { it.isEnabled }
+                                    if (activeRules.isNotEmpty()) {
+                                        val rawRects = ImageUtils.scanConnectedComponents(workImg.bufferedImage, activeRules)
+                                        withContext(Dispatchers.Main) {
+                                            if (rawRects.isNotEmpty()) {
+                                                charRects = rawRects
+                                                // 自动填充网格参数逻辑可在此处优化
+                                                val first = rawRects.minByOrNull { it.left } ?: rawRects[0]
+                                                gridX = first.left.toInt()
+                                                gridY = first.top.toInt()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        onClearSegments = { charRects = emptyList() },
+                        onToggleGridMode = { isGridMode = it },
+                        onGridParamChange = { x, y, w, h, cg, rg, cc, rc ->
+                            gridX = x; gridY = y; gridW = w; gridH = h
+                            gridColGap = cg; gridRowGap = rg
+                            gridColCount = cc; gridRowCount = rc
+                        },
+                        onGridExtract = {
+                            currentImage?.let { img ->
+                                charRects.forEach { rect ->
+                                    val cut = ImageUtils.cropImage(img.bufferedImage, rect)
+                                    addResultImage(cut, "Grid_${resultImages.size}")
+                                }
+                            }
+                        },
+                        binaryBitmap = binaryBitmap,
+                    )
+                }
+                AppModule.FONT_MANAGER -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("字库管理模块 - 开发中...", color = Color.Gray)
+                    }
                 }
             }
-        )
+        }
     }
 }

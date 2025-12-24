@@ -18,6 +18,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
@@ -49,7 +50,11 @@ fun Workspace(
     onCropConfirm: (Rect) -> Unit,
     colorRules: List<ColorRule>,
     charRects: List<Rect>,
-    onCharRectClick: (Rect) -> Unit
+    onCharRectClick: (Rect) -> Unit,
+    // [新增] 传入二值化后的位图
+    binaryBitmap: ImageBitmap?,
+    // [新增] 是否显示二值化
+    showBinaryPreview: Boolean,
 ) {
     // 1. 使用 rememberUpdatedState以此在不重启 pointerInput 的情况下获取最新值
     val currentScaleState = rememberUpdatedState(scale)
@@ -192,7 +197,7 @@ fun Workspace(
                 // 图片
                 Image(
                     bitmap = workImage.bitmap,
-                    contentDescription = null,
+                    contentDescription = "Original",
                     filterQuality = FilterQuality.None,
                     modifier = Modifier.fillMaxSize().graphicsLayer {
                         scaleX = scale
@@ -203,6 +208,26 @@ fun Workspace(
                     },
                     contentScale = ContentScale.Fit
                 )
+                // [新增] 顶层：二值化图层 (半透明或覆盖)
+                if (showBinaryPreview && binaryBitmap != null) {
+                    Image(
+                        bitmap = binaryBitmap,
+                        contentDescription = "Binary Overlay",
+                        filterQuality = FilterQuality.None, // 像素风
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                scaleX = scale
+                                scaleY = scale
+                                translationX = offset.x
+                                translationY = offset.y
+                                transformOrigin = TransformOrigin.Center
+                                // 可选：如果想做对比模式，可以设置 alpha
+                                // alpha = 0.8f
+                            },
+                        contentScale = ContentScale.Fit
+                    )
+                }
                 // 2. 绘制字符切割框 (跟随图片缩放平移)
                 Canvas(
                     modifier = Modifier.fillMaxSize().graphicsLayer {
