@@ -54,6 +54,7 @@ fun Workspace(
     charRects: List<Rect>,
     onCharRectClick: (Rect) -> Unit
 ) {
+    // 保持最新的状态引用
     val currentScaleState = rememberUpdatedState(scale)
     val currentOffsetState = rememberUpdatedState(offset)
 
@@ -101,8 +102,7 @@ fun Workspace(
             val fitOffsetX = (containerW - rawImg.width * fitScale) / 2f
             val fitOffsetY = (containerH - rawImg.height * fitScale) / 2f
 
-            // 【核心修复】监听 scale 和 offset 变化，实时重新计算悬停位置
-            // 解决缩放/平移时鼠标不动导致放大镜取色位置偏移的问题
+            // 监听变化，实时刷新鼠标悬停位置
             LaunchedEffect(scale, offset, workImage) {
                 if (currentMousePos != null && !isDragging) {
                     val (imgX, imgY) = MathUtils.mapScreenToImage(
@@ -130,7 +130,8 @@ fun Workspace(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .pointerInput(workImage) {
+                    // 【重要】将布局参数加入 key，防止窗口改变大小时坐标错乱
+                    .pointerInput(workImage, fitScale, fitOffsetX, fitOffsetY) {
                         awaitPointerEventScope {
                             while (true) {
                                 val event = awaitPointerEvent()
@@ -147,7 +148,7 @@ fun Workspace(
                                     changes.forEach { it.consume() }
                                 }
 
-                                // 2. 按下 (Press)
+                                // 2. 按下
                                 else if (event.type == PointerEventType.Press) {
                                     val startPos = currentPos
                                     val startOffset = currentOffsetState.value
@@ -173,18 +174,14 @@ fun Workspace(
                                             if (!hasDragMoved && dragAmount.getDistance() > 5f) {
                                                 hasDragMoved = true
                                                 isDragging = true
-                                                // 拖拽开始，隐藏放大镜
-                                                // currentMousePos = null // 注释掉此行，保留位置以便拖拽结束后恢复
                                                 currentHoverPixel = null
                                                 onHoverChange(null, Color.Transparent)
                                             }
 
                                             if (hasDragMoved) {
                                                 if (isRightClick) {
-                                                    // 右键拖拽 -> 平移画布
                                                     onTransformChange(currentScaleState.value, startOffset + dragAmount)
                                                 } else if (isLeftClick) {
-                                                    // 左键拖拽 -> 更新选区
                                                     if (cropStart == null) cropStart = startPos
                                                     cropCurrent = dragChange.position
                                                 }
@@ -193,7 +190,7 @@ fun Workspace(
                                         }
                                     } while (dragEvent.changes.any { it.pressed })
 
-                                    // 3. 释放 (Release)
+                                    // 3. 释放 (处理双击)
                                     if (!hasDragMoved && isLeftClick) {
                                         val now = System.currentTimeMillis()
                                         val isDoubleClick = (now - lastClickTime) < 300
@@ -202,10 +199,12 @@ fun Workspace(
                                         if (existingRect != null) {
                                             if (isClickInsideSelection) {
                                                 if (isDoubleClick) {
+                                                    // 【核心修复】这里必须使用 currentOffsetState.value 和 currentScaleState.value
+                                                    // 否则使用的是 pointerInput 首次运行时的旧闭包变量
                                                     val (x1, y1) = MathUtils.mapScreenToImage(
                                                         existingRect.topLeft,
-                                                        offset,
-                                                        scale,
+                                                        currentOffsetState.value, // 修复：使用最新 Offset
+                                                        currentScaleState.value,  // 修复：使用最新 Scale
                                                         containerW,
                                                         containerH,
                                                         fitOffsetX,
@@ -214,19 +213,20 @@ fun Workspace(
                                                     )
                                                     val (x2, y2) = MathUtils.mapScreenToImage(
                                                         existingRect.bottomRight,
-                                                        offset,
-                                                        scale,
+                                                        currentOffsetState.value, // 修复：使用最新 Offset
+                                                        currentScaleState.value,  // 修复：使用最新 Scale
                                                         containerW,
                                                         containerH,
                                                         fitOffsetX,
                                                         fitOffsetY,
                                                         fitScale
                                                     )
+                                                    // 【修复】确保 Y 轴使用 max(y1, y2)
                                                     val imgCropRect = Rect(
                                                         min(x1, x2).toFloat(),
                                                         min(y1, y2).toFloat(),
                                                         max(x1, x2).toFloat(),
-                                                        max(x1, x2).toFloat()
+                                                        max(y1, y2).toFloat()
                                                     )
                                                     onCropConfirm(imgCropRect)
                                                     clearSelection()
@@ -235,6 +235,7 @@ fun Workspace(
                                                 clearSelection()
                                             }
                                         } else {
+                                            // 取色逻辑 (这里之前就是对的，因为它用了 startOffset)
                                             val (imgX, imgY) = MathUtils.mapScreenToImage(
                                                 startPos, startOffset, currentScaleState.value,
                                                 containerW, containerH, fitOffsetX, fitOffsetY, fitScale
@@ -246,15 +247,15 @@ fun Workspace(
                                         }
                                     }
                                     isDragging = false
-                                    // 拖拽结束，手动触发一次更新以恢复放大镜（如果鼠标在有效区域）
-                                    // 由于 LaunchedEffect 依赖 scale/offset，这里如果仅是点击没变变换，依靠 Move 恢复
                                 }
 
-                                // 4. 悬停 (Move)
+                                // 4. 悬停
                                 else if (event.type == PointerEventType.Move && !isDragging) {
                                     currentMousePos = currentPos
                                     val (imgX, imgY) = MathUtils.mapScreenToImage(
-                                        currentPos, currentOffsetState.value, currentScaleState.value,
+                                        currentPos,
+                                        currentOffsetState.value, // 确保悬停也是最新的
+                                        currentScaleState.value,  // 确保悬停也是最新的
                                         containerW, containerH, fitOffsetX, fitOffsetY, fitScale
                                     )
 
@@ -274,7 +275,7 @@ fun Workspace(
                                     }
                                 }
 
-                                // 5. 移出 (Exit)
+                                // 5. 移出
                                 else if (event.type == PointerEventType.Exit) {
                                     currentMousePos = null
                                     currentHoverPixel = null
@@ -284,6 +285,7 @@ fun Workspace(
                         }
                     }
             ) {
+                // ... 渲染层代码保持不变 (Image, Canvas, FloatingPixelGrid) ...
                 // 1. 底层：原图
                 Image(
                     bitmap = workImage.bitmap,
@@ -299,7 +301,7 @@ fun Workspace(
                     contentScale = ContentScale.Fit
                 )
 
-                // 2. 中层：二值化预览覆盖
+                // 2. 中层：二值化
                 if (showBinaryPreview && binaryBitmap != null) {
                     Image(
                         bitmap = binaryBitmap,
@@ -316,7 +318,7 @@ fun Workspace(
                     )
                 }
 
-                // 3. 顶层：字符框 (Green)
+                // 3. 顶层：字符框
                 Canvas(modifier = Modifier.fillMaxSize().graphicsLayer {
                     scaleX = scale
                     scaleY = scale
@@ -339,7 +341,7 @@ fun Workspace(
                     }
                 }
 
-                // 4. 顶层：当前选区 (Red) + 提示
+                // 4. 顶层：当前选区
                 val currentRect = getCropRect()
                 if (currentRect != null && currentRect.width > 0 && currentRect.height > 0) {
                     Canvas(Modifier.fillMaxSize()) {
@@ -363,12 +365,11 @@ fun Workspace(
                 }
             }
 
-            // 5. 悬浮放大镜
+            // 5. 悬浮放大镜 (保持上次优化后的 80dp 5x5 版本)
             FloatingPixelGrid(
                 modifier = Modifier
                     .zIndex(10f)
                     .graphicsLayer {
-                        // 修复：确保不仅要 isDragging 为 false，还要确保 currentMousePos 是最新的（由 LaunchedEffect 保证数据一致性）
                         val show = !isDragging && currentMousePos != null && currentHoverPixel != null
                         if (show) {
                             alpha = 1f
@@ -384,20 +385,20 @@ fun Workspace(
                 rawImage = rawImg,
                 centerPixel = currentHoverPixel ?: IntOffset.Zero
             )
-
         } else {
             Text("请拖拽图片到此处", color = Color.Gray, modifier = Modifier.align(Alignment.Center))
         }
     }
 }
 
+// ... FloatingPixelGrid 代码保持不变 (80dp 版本) ...
 @Composable
 fun FloatingPixelGrid(
     modifier: Modifier,
     rawImage: BufferedImage,
     centerPixel: IntOffset
 ) {
-    // 获取中心像素的颜色信息
+    // ... 保持您上一次请求的 5x5 80dp 缩小版代码 ...
     var hexText = "#------"
     var coordsText = "(-, -)"
     var pixelColor = Color.Transparent
@@ -413,18 +414,13 @@ fun FloatingPixelGrid(
         coordsText = "(${centerPixel.x}, ${centerPixel.y})"
     }
 
-    // 【调整】将宽度从 110.dp 缩小到 80.dp，让组件更精致
-    // 80dp / 5格 = 每格 16dp，大小适中
     Card(
-        modifier = modifier
-            .width(80.dp)
-            .wrapContentHeight(),
-        elevation = 6.dp, //稍微降低阴影
+        modifier = modifier.width(80.dp).wrapContentHeight(),
+        elevation = 6.dp,
         border = androidx.compose.foundation.BorderStroke(1.dp, Color.White),
         shape = RoundedCornerShape(4.dp)
     ) {
         Column {
-            // 1. 像素网格区域 (5x5)
             Box(Modifier.aspectRatio(1f).background(Color.Black)) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val w = size.width
@@ -441,63 +437,29 @@ fun FloatingPixelGrid(
 
                             if (px in 0 until rawImage.width && py in 0 until rawImage.height) {
                                 val rgbInt = rawImage.getRGB(px, py)
-                                val color = Color(
-                                    red = (rgbInt shr 16 and 0xFF) / 255f,
-                                    green = (rgbInt shr 8 and 0xFF) / 255f,
-                                    blue = (rgbInt and 0xFF) / 255f
-                                )
+                                val color = Color((rgbInt shr 16 and 0xFF)/255f, (rgbInt shr 8 and 0xFF)/255f, (rgbInt and 0xFF)/255f)
                                 drawRect(color = color, topLeft = Offset(drawX, drawY), size = Size(cellSize, cellSize))
                             } else {
                                 drawRect(color = Color.Black, topLeft = Offset(drawX, drawY), size = Size(cellSize, cellSize))
                             }
-                            // 减淡网格线，使其不那么喧宾夺主
-                            drawRect(
-                                color = Color.Gray.copy(0.2f),
-                                topLeft = Offset(drawX, drawY),
-                                Size(cellSize, cellSize),
-                                style = Stroke(0.5f)
-                            )
+                            drawRect(color = Color.Gray.copy(0.2f), topLeft = Offset(drawX, drawY), Size(cellSize, cellSize), style = Stroke(0.5f))
                         }
                     }
-
-                    // 中心红色高亮框 (线条稍微变细)
                     val centerDrawX = radius * cellSize
                     val centerDrawY = radius * cellSize
-                    drawRect(
-                        color = Color.Red,
-                        topLeft = Offset(centerDrawX, centerDrawY),
-                        Size(cellSize, cellSize),
-                        style = Stroke(1.0f)
-                    )
+                    drawRect(color = Color.Red, topLeft = Offset(centerDrawX, centerDrawY), Size(cellSize, cellSize), style = Stroke(1.0f))
                 }
             }
-
-            // 2. 底部信息栏 (紧凑排版)
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color.White)
-                    .padding(vertical = 3.dp, horizontal = 2.dp),
+                modifier = Modifier.fillMaxWidth().background(Color.White).padding(vertical = 3.dp, horizontal = 2.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Hex 值 (字体调小)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(8.dp).background(pixelColor).border(0.5.dp, Color.Gray))
                     Spacer(Modifier.width(3.dp))
-                    Text(
-                        text = hexText,
-                        fontSize = 10.sp, // 缩小字体
-                        fontWeight = FontWeight.Bold,
-                        color = Color.Black
-                    )
+                    Text(text = hexText, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black)
                 }
-                // 坐标值
-                Text(
-                    text = coordsText,
-                    fontSize = 9.sp, // 缩小字体
-                    color = Color.Gray,
-                    textAlign = TextAlign.Center
-                )
+                Text(text = coordsText, fontSize = 9.sp, color = Color.Gray, textAlign = TextAlign.Center)
             }
         }
     }
