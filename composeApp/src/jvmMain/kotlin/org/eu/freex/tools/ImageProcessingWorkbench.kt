@@ -1,4 +1,3 @@
-// composeApp/src/jvmMain/kotlin/org/eu/freex/tools/ImageProcessingWorkbench.kt
 package org.eu.freex.tools
 
 import androidx.compose.foundation.layout.Row
@@ -20,7 +19,7 @@ import org.eu.freex.tools.model.WorkImage
 @Composable
 fun ImageProcessingWorkbench(
     sourceImages: List<WorkImage>,
-    resultImages: List<WorkImage>,
+    resultImages: List<WorkImage>, // 传入的是实时预览流 previewResults
     currentImage: WorkImage?,
 
     // 状态
@@ -34,15 +33,21 @@ fun ImageProcessingWorkbench(
     hoverColor: Color,
     colorRules: List<ColorRule>,
     defaultBias: String,
-    showBinaryPreview: Boolean,
+
+    // 二值化全图预览
     binaryBitmap: ImageBitmap?,
+
     isGridMode: Boolean,
     gridParams: GridParams,
     charRects: List<Rect>,
 
+    // 新增：作用域控制
+    currentScope: RuleScope,
+    onToggleScope: () -> Unit,
+
     // 回调
     onSelectSource: (Int) -> Unit,
-    onSelectResult: (Int) -> Unit, // 新增
+    onSelectResult: (Int) -> Unit,
 
     onAddFile: () -> Unit,
     onScreenCapture: () -> Unit,
@@ -60,9 +65,11 @@ fun ImageProcessingWorkbench(
     onRuleToggle: (Long, Boolean) -> Unit,
     onRuleRemove: (Long) -> Unit,
     onClearRules: () -> Unit,
-    onTogglePreview: () -> Unit,
+
+    // 这些在流水线模式下可能不再直接操作开关，但保留回调
     onAutoSegment: () -> Unit,
     onClearSegments: () -> Unit,
+
     onToggleGridMode: (Boolean) -> Unit,
     onGridParamChange: (Int, Int, Int, Int, Int, Int, Int, Int) -> Unit,
     onGridExtract: () -> Unit
@@ -87,7 +94,7 @@ fun ImageProcessingWorkbench(
             modifier = Modifier.weight(1f),
             workImage = currentImage,
             binaryBitmap = binaryBitmap, // 传递二值化图层
-            showBinaryPreview = showBinaryPreview,
+            showBinaryPreview = binaryBitmap != null, // 只要有 bitmap 就显示
             scale = mainScale,
             offset = mainOffset,
             onTransformChange = onTransformChange,
@@ -101,7 +108,7 @@ fun ImageProcessingWorkbench(
 
         RightPanel(
             modifier = Modifier.width(320.dp),
-            rawImage = currentImage?.bufferedImage, // 这里只要有图片对象就行，用于取色逻辑
+            rawImage = currentImage?.bufferedImage, // 用于取色逻辑
             hoverPixelPos = hoverPixelPos,
             hoverColor = hoverColor,
             mainScale = mainScale,
@@ -113,15 +120,20 @@ fun ImageProcessingWorkbench(
             onRuleToggle = onRuleToggle,
             onRuleRemove = onRuleRemove,
             onClearRules = onClearRules,
-            showBinary = showBinaryPreview,
-            onTogglePreview = onTogglePreview,
+
+            // 移除了显式的 showBinaryPreview 开关控制，由 App 逻辑自动决定
             onAutoSegment = onAutoSegment,
             onClearSegments = onClearSegments,
+
             isGridMode = isGridMode,
             onToggleGridMode = onToggleGridMode,
             gridParams = gridParams,
             onGridParamChange = onGridParamChange,
-            onGridExtract = onGridExtract
+            onGridExtract = onGridExtract,
+
+            // 传递 Scope 控制给右侧面板
+            currentScope = currentScope,
+            onToggleScope = onToggleScope
         )
     }
 }

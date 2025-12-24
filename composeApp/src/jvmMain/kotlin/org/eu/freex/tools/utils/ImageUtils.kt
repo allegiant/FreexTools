@@ -161,5 +161,51 @@ object ImageUtils {
         }
         return list
     }
+
+    /**
+     * [新增] 二值化并裁剪
+     * 根据颜色规则，将指定区域内的像素转换为黑白二值图像
+     * @param source 原图
+     * @param rules 启用的颜色规则
+     * @param targetRect 处理区域
+     */
+    fun binarizeImage(
+        source: BufferedImage,
+        rules: List<ColorRule>,
+        targetRect: Rect
+    ): BufferedImage {
+        // 1. 确定安全的裁剪范围 (防越界)
+        val x = targetRect.left.toInt().coerceIn(0, source.width - 1)
+        val y = targetRect.top.toInt().coerceIn(0, source.height - 1)
+        val w = targetRect.width.toInt().coerceIn(1, max(1, source.width - x))
+        val h = targetRect.height.toInt().coerceIn(1, max(1, source.height - y))
+
+        // 创建新的图片用于存放结果 (ARGB格式)
+        val resultImg = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
+
+        // 2. 遍历目标区域的每一个像素
+        for (row in 0 until h) {
+            for (col in 0 until w) {
+                // 计算原图中的绝对坐标
+                val srcX = x + col
+                val srcY = y + row
+
+                // 获取原图像素
+                val rgb = source.getRGB(srcX, srcY)
+
+                // 3. 核心判断：是否匹配任意一条启用的规则
+                val isMatch = ColorUtils.isMatchAny(rgb, rules)
+
+                // 4. 设置结果颜色
+                // 匹配规则 -> 白色 (0xFFFFFFFF)
+                // 不匹配 -> 黑色 (0xFF000000)
+                // 注意：这里包含了 Alpha 通道 (前两个FF)，否则可能会变成透明
+                val newColor = if (isMatch) 0xFFFFFFFF.toInt() else 0xFF000000.toInt()
+
+                resultImg.setRGB(col, row, newColor)
+            }
+        }
+        return resultImg
+    }
 }
 
