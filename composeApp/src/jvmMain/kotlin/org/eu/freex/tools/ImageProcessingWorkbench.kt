@@ -9,22 +9,36 @@ import org.eu.freex.tools.viewmodel.ImageProcessingViewModel
 
 @Composable
 fun ImageProcessingWorkbench(
-    viewModel: ImageProcessingViewModel // 【核心变化】只接收 VM
+    viewModel: ImageProcessingViewModel
 ) {
-    Row(modifier = Modifier.fillMaxSize()) {
-        // 1. 左侧面板
-        LeftPanel(
-            modifier = Modifier.width(260.dp),
-            viewModel = viewModel // 传 VM 给 LeftPanel
-        )
+    val workImage = viewModel.currentWorkImage
+    val binaryPreview = viewModel.binaryPreview
 
-        // 2. 中间区域
+    val showPreview = (workImage?.isBinary == false) && (binaryPreview != null)
+    val binBitmap = if (showPreview) binaryPreview?.bitmap else null
+
+    // 【新增】根据右侧 Tab 决定底部面板显示什么内容
+    // Tab 0 (滤镜): 显示流水线步骤 (displayChain)
+    // Tab 1 (切割): 显示切割结果 (segmentationResults)
+    val bottomPanelData = if (viewModel.rightPanelTabIndex == 0) {
+        viewModel.displayChain
+    } else {
+        viewModel.segmentationResults
+    }
+
+    // 【新增】底部的选中索引逻辑也需要分离，暂时为了简单，切割结果复用一个索引，或者您可以加一个 separate index
+    // 这里为了 UI 简单，切割结果列表点击时暂时不改变主视图，或者您可以绑定到另一个 View 逻辑
+    val selectedIndex = if (viewModel.rightPanelTabIndex == 0) viewModel.selectedPipelineIndex else -1
+
+    Row(modifier = Modifier.fillMaxSize()) {
+        LeftPanel(modifier = Modifier.width(260.dp), viewModel = viewModel)
+
         Column(modifier = Modifier.weight(1f)) {
             Workspace(
                 modifier = Modifier.weight(1f),
-                workImage = viewModel.currentWorkImage, // 仍可直接传状态给纯 UI 组件
-                binaryBitmap = if (viewModel.currentWorkImage?.isBinary == false) viewModel.binaryPreview?.bitmap else null,
-                showBinaryPreview = (viewModel.currentWorkImage?.isBinary == false) && (viewModel.binaryPreview != null),
+                workImage = workImage,
+                binaryBitmap = binBitmap,
+                showBinaryPreview = showPreview,
                 scale = viewModel.mainScale,
                 offset = viewModel.mainOffset,
                 onTransformChange = { s, o -> viewModel.mainScale = s; viewModel.mainOffset = o },
@@ -38,23 +52,33 @@ fun ImageProcessingWorkbench(
 
             BottomPanel(
                 modifier = Modifier.height(140.dp),
-                processChain = viewModel.displayChain,
-                selectedIndex = viewModel.selectedPipelineIndex,
-                onSelect = { viewModel.selectedPipelineIndex = it },
+                processChain = bottomPanelData, // 动态数据源
+                selectedIndex = selectedIndex,
+                onSelect = { idx ->
+                    if (viewModel.rightPanelTabIndex == 0) {
+                        viewModel.selectedPipelineIndex = idx
+                    } else {
+                        // 如果点击的是切割结果，可以实现“查看该字模”的逻辑
+                        // 目前暂留空
+                    }
+                },
                 onDelete = { index ->
-                    val pipelineIndex = index - 1
-                    if (pipelineIndex >= 0 && pipelineIndex < viewModel.pipelineSteps.size) {
-                        viewModel.pipelineSteps.removeAt(pipelineIndex)
-                        viewModel.selectedPipelineIndex = 0
+                    if (viewModel.rightPanelTabIndex == 0) {
+                        val pipelineIndex = index - 1
+                        if (pipelineIndex >= 0 && pipelineIndex < viewModel.pipelineSteps.size) {
+                            viewModel.pipelineSteps.removeAt(pipelineIndex)
+                            viewModel.selectedPipelineIndex = 0
+                        }
+                    } else {
+                        // 删除单个字模
+                        if (index in viewModel.segmentationResults.indices) {
+                            viewModel.segmentationResults.removeAt(index)
+                        }
                     }
                 }
             )
         }
 
-        // 3. 右侧面板
-        RightPanel(
-            modifier = Modifier.width(320.dp),
-            viewModel = viewModel // 传 VM 给 RightPanel
-        )
+        RightPanel(modifier = Modifier.width(320.dp), viewModel = viewModel)
     }
 }

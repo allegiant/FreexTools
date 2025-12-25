@@ -1,4 +1,3 @@
-// 文件路径: composeApp/src/jvmMain/kotlin/org/eu/freex/tools/utils/ImageUtils.kt
 package org.eu.freex.tools.utils
 
 import androidx.compose.ui.geometry.Rect
@@ -39,20 +38,14 @@ object ImageUtils {
         } else null
     }
 
-    // 简单的模拟去噪
+    // --- 算法实现 ---
+
+    // 1. 模拟去噪 (变淡)
     fun dummyDenoise(source: BufferedImage): BufferedImage {
-        val w = source.width
-        val h = source.height
-        val newImg = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
-        val g = newImg.createGraphics()
-        g.drawImage(source, 0, 0, null)
-        g.color = Color(200, 200, 200, 50)
-        g.fillRect(0, 0, w, h)
-        g.dispose()
-        return newImg
+        return applyPlaceholderEffect(source, "去噪处理")
     }
 
-    // 简单的模拟细化
+    // 2. 模拟细化 (画红叉)
     fun dummySkeleton(source: BufferedImage): BufferedImage {
         val w = source.width
         val h = source.height
@@ -66,6 +59,57 @@ object ImageUtils {
         return newImg
     }
 
+    // 3. 灰度化
+    fun toGrayscale(source: BufferedImage): BufferedImage {
+        val w = source.width
+        val h = source.height
+        val newImg = BufferedImage(w, h, BufferedImage.TYPE_BYTE_GRAY)
+        val g = newImg.createGraphics()
+        g.drawImage(source, 0, 0, null)
+        g.dispose()
+        return newImg
+    }
+
+    // 4. 反色 (颠倒颜色)
+    fun invertColors(source: BufferedImage): BufferedImage {
+        val w = source.width
+        val h = source.height
+        val newImg = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                val rgba = source.getRGB(x, y)
+                val alpha = (rgba shr 24) and 0xFF
+                val red = 255 - ((rgba shr 16) and 0xFF)
+                val green = 255 - ((rgba shr 8) and 0xFF)
+                val blue = 255 - (rgba and 0xFF)
+                val newColor = (alpha shl 24) or (red shl 16) or (green shl 8) or blue
+                newImg.setRGB(x, y, newColor)
+            }
+        }
+        return newImg
+    }
+
+    // 5. 通用占位效果 (给图片加个水印，表示该功能已执行)
+    fun applyPlaceholderEffect(source: BufferedImage, label: String): BufferedImage {
+        val w = source.width
+        val h = source.height
+        val newImg = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
+        val g = newImg.createGraphics()
+        g.drawImage(source, 0, 0, null)
+
+        // 加一个半透明遮罩
+        g.color = Color(0, 100, 255, 30)
+        g.fillRect(0, 0, w, h)
+
+        // 写字
+        g.color = Color.WHITE
+        g.font = Font("Arial", Font.BOLD, 20)
+        g.drawString("Applied: $label", 10, 30)
+        g.dispose()
+        return newImg
+    }
+
+    // 6. 连通域扫描
     fun scanConnectedComponents(source: BufferedImage, rules: List<ColorRule>, minW: Int = 2, minH: Int = 2): List<Rect> {
         val w = source.width
         val h = source.height
@@ -120,6 +164,7 @@ object ImageUtils {
         return result
     }
 
+    // 7. 网格生成
     fun generateGridRects(startX: Int, startY: Int, width: Int, height: Int, colGap: Int, rowGap: Int, colCount: Int, rowCount: Int): List<Rect> {
         val list = mutableListOf<Rect>()
         if (width <= 0 || height <= 0) return list
@@ -135,6 +180,7 @@ object ImageUtils {
         return list
     }
 
+    // 8. 二值化 (规则)
     fun binarizeImage(source: BufferedImage, rules: List<ColorRule>, targetRect: Rect): BufferedImage {
         val x = targetRect.left.toInt().coerceIn(0, source.width - 1)
         val y = targetRect.top.toInt().coerceIn(0, source.height - 1)
@@ -154,7 +200,7 @@ object ImageUtils {
         return resultImg
     }
 
-    // 【新增】基于 RGB 平均阈值的二值化
+    // 9. 二值化 (RGB平均)
     fun binarizeByRgbAvg(source: BufferedImage, min: Int, max: Int, targetRect: Rect): BufferedImage {
         val x = targetRect.left.toInt().coerceIn(0, source.width - 1)
         val y = targetRect.top.toInt().coerceIn(0, source.height - 1)
@@ -173,7 +219,6 @@ object ImageUtils {
                 val b = rgb and 0xFF
                 val avg = (r + g + b) / 3
 
-                // 平均值在范围内视为目标(白色)，否则为黑色
                 val isMatch = avg in min..max
                 val newColor = if (isMatch) 0xFFFFFFFF.toInt() else 0xFF000000.toInt()
                 resultImg.setRGB(col, row, newColor)

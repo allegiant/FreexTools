@@ -6,6 +6,11 @@ interface ImageFilter {
     val label: String
 }
 
+// 【新增】默认的浏览模式，不进行任何处理
+object ViewFilter : ImageFilter {
+    override val label: String = "浏览模式"
+}
+
 enum class ColorFilterType(override val label: String) : ImageFilter {
     BINARIZATION("二值化"),
     COLOR_PICK("颜色选取"),

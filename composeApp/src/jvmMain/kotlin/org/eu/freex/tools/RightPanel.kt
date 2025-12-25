@@ -20,22 +20,22 @@ import org.eu.freex.tools.viewmodel.ImageProcessingViewModel
 @Composable
 fun RightPanel(
     modifier: Modifier,
-    viewModel: ImageProcessingViewModel // 【核心变化】只接收 VM
+    viewModel: ImageProcessingViewModel
 ) {
-    var selectedTab by remember { mutableStateOf(0) }
+    // 【修改】使用 ViewModel 中的状态，而不是本地 remember
+    val selectedTab = viewModel.rightPanelTabIndex
 
     Column(modifier = modifier.fillMaxHeight()) {
         Row(modifier = Modifier.fillMaxWidth().height(32.dp).background(Color(0xFF555555))) {
-            RightPanelTab("2. 滤镜处理", selectedTab == 0, { selectedTab = 0 }, Modifier.weight(1f))
+            RightPanelTab("2. 滤镜处理", selectedTab == 0, { viewModel.rightPanelTabIndex = 0 }, Modifier.weight(1f))
             Box(Modifier.width(1.dp).fillMaxHeight().background(Color.Black))
-            RightPanelTab("3. 切割识别", selectedTab == 1, { selectedTab = 1 }, Modifier.weight(1f))
+            RightPanelTab("3. 切割识别", selectedTab == 1, { viewModel.rightPanelTabIndex = 1 }, Modifier.weight(1f))
         }
 
         Box(modifier = Modifier.weight(1f)) {
             when (selectedTab) {
                 0 -> FilterPanel(
                     modifier = Modifier.fillMaxSize(),
-                    // 直接从 VM 获取所有需要的状态
                     currentFilter = viewModel.currentFilter,
                     onFilterChange = { viewModel.currentFilter = it },
                     colorRules = viewModel.activeColorRules,
@@ -43,7 +43,6 @@ fun RightPanel(
                     onDefaultBiasChange = { newBias ->
                         if (viewModel.currentScope == RuleScope.GLOBAL) viewModel.globalBias = newBias
                         else viewModel.currentSourceImage?.let {
-                            // 这里更新源图片的逻辑可以封装在 VM 的方法里
                             val idx = viewModel.selectedSourceIndex
                             if(idx != -1) viewModel.sourceImages[idx] = it.copy(localBias = newBias)
                         }
@@ -65,16 +64,13 @@ fun RightPanel(
                     isGridMode = viewModel.isGridMode,
                     onToggleGridMode = { viewModel.isGridMode = it },
                     gridParams = viewModel.gridParams,
-                    onGridParamChange = { x, y, w, h, cg, rg, cc, rc -> viewModel.gridParams =
-                        GridParams(x, y, w, h, cg, rg, cc, rc)
-                    },
-                    onStartSegment = { viewModel.handleProcessAdd(org.eu.freex.tools.model.ColorFilterType.BINARIZATION) } // 触发处理
+                    onGridParamChange = { x, y, w, h, cg, rg, cc, rc -> viewModel.gridParams = GridParams(x, y, w, h, cg, rg, cc, rc) },
+                    onStartSegment = { viewModel.performSegmentation() }
                 )
             }
         }
     }
 }
-// RightPanelTab 保持不变
 
 @Composable
 fun RightPanelTab(text: String, isSelected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {

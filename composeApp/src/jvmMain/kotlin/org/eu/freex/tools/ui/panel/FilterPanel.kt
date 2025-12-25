@@ -116,8 +116,6 @@ fun BinarizationParams(
     isRgbAvgEnabled: Boolean,
     onIsRgbAvgEnabledChange: (Boolean) -> Unit
 ) {
-    var thresholdRange by remember { mutableStateOf(0f..70f) }
-    var isRgbAvgEnabled by remember { mutableStateOf(true) }
     val yellowColor = Color(0xFFFFD54F)
 
     Column {

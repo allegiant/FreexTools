@@ -14,6 +14,7 @@ data class WorkImage(
     val label: String = name,
     // 是否是二值化结果 (UI显示绿色，逻辑上作为最终输出)
     val isBinary: Boolean = false,
+    val params: Map<String, Any> = emptyMap(),
 
     // 继承的参数
     val localColorRules: List<ColorRule>? = null,
